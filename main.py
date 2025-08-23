@@ -1,5 +1,4 @@
 import os
-import threading
 import datetime
 from telegram.ext import (
     Updater,
