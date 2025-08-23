@@ -138,7 +138,7 @@ def handle_delete(update, context):
 
 # --- Command Functions ---
 def start(update, context):
-    reply_message = "Welcome! Send a message or photo to post it anonymously. For more info, use /guide. Use /help to contact the owner."
+    reply_message = "Welcome to the Confession Bot! Send me a message or a photo, and I will post it anonymously to the https://t.me/TapahConfession. Use /help to contact the owner."
     update.message.reply_text(reply_message)
 
 def guide(update, context):
