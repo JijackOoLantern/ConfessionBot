@@ -426,6 +426,16 @@ def main():
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_confession))
 
     updater.start_polling()
+    
+    # --- STARTUP NOTIFICATION ---
+    try:
+        startup_message = f"✅ Bot is up! Running from Raspberry Pi. Started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # OWNER_ID is an integer read from the environment variables
+        updater.bot.send_message(chat_id=OWNER_ID, text=startup_message)
+    except Exception as e:
+        # We catch any potential failure here to prevent the main thread from crashing on startup.
+        print(f"Warning: Failed to send startup notification to owner: {e}")
+        
     print("Bot is online with Timeouts and Delete Logging!")
     updater.idle()
 
