@@ -85,7 +85,13 @@ def check_for_banned_words(text: str) -> bool:
     text_lower = text.lower()
     for word in BANNED_WORDS:
         if word in text_lower:
-            return True
+            if text_lower == word:
+                return True
+            # For partial matches, check if the word is isolated (e.g., surrounded by spaces or punctuation)
+            import re
+            pattern = r'\b' + re.escape(word) + r'\b'
+            if re.search(pattern, text_lower):
+                return True
     return False
 
 def create_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
@@ -131,14 +137,19 @@ def post_photo(context):
     # Post to Public Channel
     context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'])
     
-    # Post to Log Channel
-    log_message = create_log_message(job_info, "Photo")
+    # --- LOGGING FIX: Separate photo from metadata ---
+    
+    # 1. Post to Log Channel - Send Photo first (with original caption)
     context.bot.send_photo(
         chat_id=LOG_CHANNEL_ID, 
         photo=job_info['photo'], 
-        caption=log_message, 
-        parse_mode='MarkdownV2'
+        caption=job_info['caption'] # Keeping the original caption
     )
+
+    # 2. Post Log Message as separate text message for metadata (Guaranteed not to hit caption limits)
+    log_message = create_log_message(job_info, "Photo")
+    context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_message, parse_mode='MarkdownV2')
+
 
 # --- "Handler" Functions ---
 
@@ -165,6 +176,7 @@ def _schedule_post(update, context, post_type: str):
             save_timeouts()
 
     # Determine content
+    text_to_check = ""
     if post_type == 'text':
         text_to_check = update.message.text
     elif post_type == 'photo':
