@@ -16,10 +16,12 @@ from typing import Set, Dict, Any, Union
 # Time settings
 POST_DELAY = 15  # Cooldown between posts for all users, in seconds
 DELETE_COOLDOWN = 60  # Cooldown for deleting posts, in seconds
+LINK_COOLDOWN = 14400 # 4 Hours cooldown for links (4 * 60 * 60)
 
 # In-memory storage for queues
 user_queues: Dict[int, datetime.datetime] = {}
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
+user_link_cooldowns: Dict[int, datetime.datetime] = {} # New: Track link usage
 
 # --- Environment Variable Loading ---
 try:
@@ -87,10 +89,23 @@ def check_for_banned_words(text: str) -> bool:
         if word in text_lower:
             if text_lower == word:
                 return True
-            # For partial matches, check if the word is isolated (e.g., surrounded by spaces or punctuation)
             import re
             pattern = r'\b' + re.escape(word) + r'\b'
             if re.search(pattern, text_lower):
+                return True
+    return False
+
+def contains_link(message) -> bool:
+    """Checks if the message or caption contains a URL entity."""
+    # Check text body entities
+    if message.entities:
+        for entity in message.entities:
+            if entity.type in ('url', 'text_link'):
+                return True
+    # Check photo caption entities
+    if message.caption_entities:
+        for entity in message.caption_entities:
+            if entity.type in ('url', 'text_link'):
                 return True
     return False
 
@@ -138,15 +153,14 @@ def post_photo(context):
     context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'])
     
     # --- LOGGING FIX: Separate photo from metadata ---
-    
     # 1. Post to Log Channel - Send Photo first (with original caption)
     context.bot.send_photo(
         chat_id=LOG_CHANNEL_ID, 
         photo=job_info['photo'], 
-        caption=job_info['caption'] # Keeping the original caption
+        caption=job_info['caption']
     )
 
-    # 2. Post Log Message as separate text message for metadata (Guaranteed not to hit caption limits)
+    # 2. Post Log Message as separate text message
     log_message = create_log_message(job_info, "Photo")
     context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_message, parse_mode='MarkdownV2')
 
@@ -171,7 +185,6 @@ def _schedule_post(update, context, post_type: str):
             update.message.reply_text(f"You are in timeout for breaking rules. You can post again in {minutes_left} minutes.")
             return
         else:
-            # Cleanup expired timeout
             del USER_TIMEOUTS[user_id]
             save_timeouts()
 
@@ -187,7 +200,24 @@ def _schedule_post(update, context, post_type: str):
         update.message.reply_text("Your message contains a banned word and was not posted.")
         return
 
-    # 4. Queue Calculation
+    # 4. LINK COOLDOWN CHECK (New)
+    if contains_link(update.message):
+        current_time = datetime.datetime.now()
+        last_link_time = user_link_cooldowns.get(user_id)
+        
+        if last_link_time:
+            time_since_last = (current_time - last_link_time).total_seconds()
+            if time_since_last < LINK_COOLDOWN:
+                remaining_seconds = LINK_COOLDOWN - time_since_last
+                hours_left = int(remaining_seconds / 3600)
+                minutes_left = int((remaining_seconds % 3600) / 60)
+                update.message.reply_text(f"Links are limited to once every 4 hours. Wait {hours_left}h {minutes_left}m.")
+                return
+        
+        # Update the link timer if the check passed
+        user_link_cooldowns[user_id] = current_time
+
+    # 5. Queue Calculation
     current_time = datetime.datetime.now()
     last_post_time = user_queues.get(user_id, current_time)
     scheduled_time = max(current_time, last_post_time)
@@ -236,10 +266,8 @@ def handle_delete(update, context):
         return
 
     forwarded_chat_id = str(update.message.forward_from_chat.id)
-    # Handle the fact that IDs can sometimes have/missing the -100 prefix depending on context
     target_id_str = str(CHANNEL_ID)
     
-    # Basic check if it matches channel ID
     if forwarded_chat_id == target_id_str or target_id_str.endswith(forwarded_chat_id) or forwarded_chat_id.endswith(target_id_str):
         
         # Cooldown check
@@ -261,10 +289,7 @@ def handle_delete(update, context):
             user_delete_cooldowns[user_id] = current_time
             
             # 2. Log the Deletion
-            # We extract the content from the forwarded message the user just sent us
             deleted_text = update.message.text or update.message.caption or "[Media with no caption]"
-            
-            # Escape for MarkdownV2
             safe_user = escape_markdown(f"{user.first_name} (ID: {user.id})", version=2)
             safe_content = escape_markdown(deleted_text, version=2)
             
@@ -374,6 +399,7 @@ def guide(update, context):
 - **ADS:** You MUST include `#Ads` at the start of advertisement posts.
 - **Restrictions:**
   - New post cooldown: 15s
+  - Link cooldown: 4 hours
   - Delete cooldown: 60s
   - No banned words allowed.
     """
@@ -442,13 +468,11 @@ def main():
     # --- STARTUP NOTIFICATION ---
     try:
         startup_message = f"✅ Bot is up! Running from Raspberry Pi. Started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        # OWNER_ID is an integer read from the environment variables
         updater.bot.send_message(chat_id=OWNER_ID, text=startup_message)
     except Exception as e:
-        # We catch any potential failure here to prevent the main thread from crashing on startup.
         print(f"Warning: Failed to send startup notification to owner: {e}")
         
-    print("Bot is online with Timeouts and Delete Logging!")
+    print("Bot is online with Link Cooldowns!")
     updater.idle()
 
 if __name__ == '__main__':
