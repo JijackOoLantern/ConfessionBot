@@ -14,7 +14,7 @@ from typing import Set, Dict, Any, Union
 
 # --- Bot's Memory and Settings ---
 # Time settings
-POST_DELAY = 15  # Cooldown between posts for all users, in seconds
+POST_DELAY = 60  # Cooldown between posts for all users, in seconds
 DELETE_COOLDOWN = 90  # Cooldown for deleting posts, in seconds
 LINK_COOLDOWN = 14400 # 4 Hours cooldown for links (4 * 60 * 60)
 
@@ -399,7 +399,7 @@ def guide(update, context):
 - Forward a post back to me to delete it.
 - **ADS:** You MUST include `#Ads` at the start of advertisement posts.
 - **Restrictions:**
-  - New post cooldown: 15s
+  - New post cooldown: 60s
   - Link cooldown: 4 hours
   - Delete cooldown: 90s
   - No banned words allowed.
