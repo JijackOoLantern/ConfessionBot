@@ -24,7 +24,7 @@ LINK_COOLDOWN = 14400 # 4 Hours cooldown for links (4 * 60 * 60)
 # Timezone Settings
 TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
 START_HOUR = 6  # 06:00
-END_HOUR = 2    # 02:00 (Next day)
+END_HOUR = 4    # 02:00 (Next day)
 
 # Feature Toggles
 LINKS_ENABLED = False
