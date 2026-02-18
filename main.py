@@ -562,7 +562,7 @@ def guide(update, context):
 - No banned words allowed.
 
 *Operating Hours:*
-- 06:00 AM to 02:00 AM (GMT+8)
+- 09:00 PM to 06:00 PM (GMT+8)
 - Current Status: {active_status}
 
 *Permissions:*
