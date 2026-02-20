@@ -314,7 +314,7 @@ def _schedule_post(update, context, post_type: str):
     base_delay = 0
     if not is_bot_active() and user.id != OWNER_ID:
         base_delay = get_seconds_until_active()
-        update.message.reply_text(f"🌙 Bot is currently in sleep mode (02:00-06:00). Your confession is queued for 06:00 AM.")
+        update.message.reply_text(f"🌙 Bot is currently in sleep mode (18:00-21:00). Your confession is queued for 09:00 PM.")
 
     # 6. Queue Calculation
     now_tz = datetime.datetime.now(TIMEZONE)
