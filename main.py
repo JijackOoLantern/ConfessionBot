@@ -31,14 +31,15 @@ except ImportError:
 POST_DELAY = 15  # Cooldown between posts for all users, in seconds
 DELETE_COOLDOWN = 60  # Cooldown for deleting posts, in seconds
 LINK_COOLDOWN = 14400 # 4 Hours cooldown for links
+PHOTO_COOLDOWN = 14400 # 4 Hours cooldown for media/photos
 TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
 
 # Track when the bot started for Uptime statistics
 BOT_START_TIME = datetime.datetime.now()
 
 # Active Hours (24h format)
-START_HOUR = 18  # 06:00
-END_HOUR = 21    # 02:00 (Next day)
+START_HOUR = 21  # 21:00 (9:00 PM)
+END_HOUR = 18    # 18:00 (6:00 PM Next day)
 
 # Feature Toggles
 LINKS_ENABLED = True
@@ -48,6 +49,7 @@ PHOTOS_ENABLED = True
 user_queues: Dict[int, datetime.datetime] = {}
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
 user_link_cooldowns: Dict[int, datetime.datetime] = {}
+user_photo_cooldowns: Dict[int, datetime.datetime] = {} # Tracks photo usage
 
 # States for ConversationHandler
 AWAITING_HELP_MESSAGE = 0
@@ -161,7 +163,7 @@ def save_timeouts():
                 f.write(f"{uid},{timestamp}\n")
 
 def is_bot_active():
-    """Checks if current time is within 06:00 - 02:00 GMT+8."""
+    """Checks if current time is within 21:00 (9 PM) - 18:00 (6 PM) GMT+8."""
     now = datetime.datetime.now(TIMEZONE)
     current_hour = now.hour
     if START_HOUR <= current_hour or current_hour < END_HOUR:
@@ -169,7 +171,7 @@ def is_bot_active():
     return False
 
 def get_seconds_until_active():
-    """Calculates wait time until 06:00 AM."""
+    """Calculates wait time until 21:00 (9 PM)."""
     now = datetime.datetime.now(TIMEZONE)
     target = now.replace(hour=START_HOUR, minute=0, second=0, microsecond=0)
     if now.hour >= START_HOUR:
@@ -284,10 +286,21 @@ def _schedule_post(update, context, post_type: str):
             del USER_TIMEOUTS[user.id]
             save_timeouts()
 
-    # --- Feature Toggle: Photo ---
-    if post_type == 'photo' and not PHOTOS_ENABLED:
-        update.message.reply_text("❌ Photo confessions are currently disabled.")
-        return
+    # --- Feature Toggle & Cooldown: Photo ---
+    if post_type == 'photo':
+        if not PHOTOS_ENABLED:
+            update.message.reply_text("❌ Photo confessions are currently disabled.")
+            return
+        
+        now = datetime.datetime.now()
+        last_photo = user_photo_cooldowns.get(user.id)
+        if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
+            rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
+            hours_left = int(rem / 3600)
+            minutes_left = int((rem % 3600) / 60)
+            update.message.reply_text(f"⏳ Photos are limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
+            return
+        user_photo_cooldowns[user.id] = now
 
     text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     
@@ -306,7 +319,9 @@ def _schedule_post(update, context, post_type: str):
         last_link = user_link_cooldowns.get(user.id)
         if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
             rem = LINK_COOLDOWN - (now - last_link).total_seconds()
-            update.message.reply_text(f"⏳ Links are limited to once every 4h. Wait {int(rem/3600)}h {int((rem%3600)/60)}m.")
+            hours_left = int(rem / 3600)
+            minutes_left = int((rem % 3600) / 60)
+            update.message.reply_text(f"⏳ Links are limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
             return
         user_link_cooldowns[user.id] = now
 
@@ -314,7 +329,7 @@ def _schedule_post(update, context, post_type: str):
     base_delay = 0
     if not is_bot_active() and user.id != OWNER_ID:
         base_delay = get_seconds_until_active()
-        update.message.reply_text(f"🌙 Bot is currently in sleep mode (18:00-21:00). Your confession is queued for 09:00 PM.")
+        update.message.reply_text(f"🌙 Bot is currently in sleep mode (06:00 PM-09:00 PM). Your confession is queued for 09:00 PM.")
 
     # 6. Queue Calculation
     now_tz = datetime.datetime.now(TIMEZONE)
@@ -558,7 +573,8 @@ def guide(update, context):
 - To delete your post: Forward it from the channel back to this bot.
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
-- Link Cooldown: 4 hours between link posts.
+- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
+- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
 - No banned words allowed.
 
 *Offline Hours:*
