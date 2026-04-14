@@ -38,8 +38,8 @@ TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
 BOT_START_TIME = datetime.datetime.now()
 
 # Active Hours (24h format)
-START_HOUR = 21  # 21:00 (9:00 PM)
-END_HOUR = 18    # 18:00 (6:00 PM Next day)
+START_HOUR = 18  # 21:00 (9:00 PM)
+END_HOUR = 21    # 18:00 (6:00 PM Next day)
 
 # Feature Toggles
 LINKS_ENABLED = True
