@@ -60,14 +60,16 @@ try:
     CHANNEL_ID = os.environ.get('CHANNEL_ID')
     OWNER_ID_STR = os.environ.get('OWNER_ID')
     LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
+    MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') # NEW: Moderator Log Channel
     GOOGLE_SHEET_NAME = os.environ.get('GOOGLE_SHEET_NAME', 'ConfessionLogs') 
 
-    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID]):
+    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID]):
         missing = [k for k, v in {
             'BOT_TOKEN': TOKEN, 
             'CHANNEL_ID': CHANNEL_ID, 
             'OWNER_ID': OWNER_ID_STR, 
-            'LOG_CHANNEL_ID': LOG_CHANNEL_ID
+            'LOG_CHANNEL_ID': LOG_CHANNEL_ID,
+            'MOD_LOG_CHANNEL_ID': MOD_LOG_CHANNEL_ID
         }.items() if not v]
         print(f"❌ CRITICAL ERROR: Missing .env variables: {', '.join(missing)}")
         sys.exit(1)
@@ -79,7 +81,7 @@ except ValueError:
 
 # --- Persistence Loading ---
 
-# 1. Banned Users
+# 1. Load generic IDs function
 def load_ids(filename):
     ids = set()
     try:
@@ -93,6 +95,7 @@ def load_ids(filename):
     return ids
 
 BANNED_USERS = load_ids("banned_users.txt") 
+MODERATORS = load_ids("moderators.txt") # NEW: Load Moderators
 
 # 2. Timeouts
 USER_TIMEOUTS: Dict[int, float] = {}
@@ -155,6 +158,10 @@ def log_to_gsheet(job_info, text_content=None, photo_id=None):
 
 # --- Helper Functions ---
 
+def is_owner_or_mod(uid):
+    """Checks if a user is the owner or a moderator."""
+    return uid == OWNER_ID or uid in MODERATORS
+
 def save_timeouts():
     """Saves the current active timeouts to file."""
     with open("timeouts.txt", "w") as f:
@@ -200,7 +207,7 @@ def contains_link(message) -> bool:
     return any(e.type in ('url', 'text_link') for e in entities)
 
 def create_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
-    """Creates a crash-proof log message using MarkdownV2 escaping."""
+    """Creates a crash-proof log message using MarkdownV2 escaping for the OWNER."""
     raw_username = job_info.get('username')
     display_username = escape_markdown(f"@{raw_username}") if raw_username else "Not available"
     safe_name = escape_markdown(str(job_info['user_name']))
@@ -217,6 +224,21 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
         log_message += f"*Content:*\n{escape_markdown(content_to_log)}"
     return log_message
 
+def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
+    """Creates an anonymized log message for MODERATORS."""
+    safe_uid = escape_markdown(str(job_info['user_id']))
+    
+    log_message = (
+        f"*New {content_type} Confession Log (Moderator View)*\n\n"
+        f"*User ID:* `{safe_uid}`\n"
+        f"*Name:* \\[HIDDEN\\]\n"
+        f"*Username:* \\[HIDDEN\\]\n\n"
+    )
+    content_to_log = text_content or job_info.get('caption')
+    if content_to_log:
+        log_message += f"*Content:*\n{escape_markdown(content_to_log)}"
+    return log_message
+
 # --- Job Queue Functions ---
 
 def post_text(context):
@@ -226,11 +248,15 @@ def post_text(context):
         # 1. Post to Public Channel
         context.bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], timeout=20)
         
-        # 2. Post to Log Channel
+        # 2. Post to Owner Log Channel
         log_msg = create_log_message(job_info, "Text", text_content=job_info['text'])
         context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_msg, parse_mode='Markdown', timeout=20)
         
-        # 3. Log to Google Sheet
+        # 3. Post to Moderator Log Channel
+        mod_log_msg = create_mod_log_message(job_info, "Text", text_content=job_info['text'])
+        context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_msg, parse_mode='Markdown', timeout=20)
+
+        # 4. Log to Google Sheet
         log_to_gsheet(job_info, text_content=job_info['text'])
     except Exception as e:
         print(f"Post Error: {e}")
@@ -242,19 +268,17 @@ def post_photo(context):
         # 1. Post to Public Channel
         context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], timeout=30)
         
-        # 2. Post to Log Channel - Separate photo from metadata
-        # Send Photo first (with original caption)
-        context.bot.send_photo(
-            chat_id=LOG_CHANNEL_ID, 
-            photo=job_info['photo'], 
-            caption=job_info['caption']
-        )
-        
-        # Send Log Metadata
+        # 2. Post to Owner Log Channel
+        context.bot.send_photo(chat_id=LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
         log_msg = create_log_message(job_info, "Photo")
         context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_msg, parse_mode='Markdown', timeout=30)
         
-        # 3. Log to Google Sheet
+        # 3. Post to Moderator Log Channel
+        context.bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
+        mod_log_msg = create_mod_log_message(job_info, "Photo")
+        context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_msg, parse_mode='Markdown', timeout=30)
+
+        # 4. Log to Google Sheet
         log_to_gsheet(job_info, text_content=job_info['caption'], photo_id=job_info['photo'])
     except Exception as e:
         print(f"Post Error: {e}")
@@ -268,6 +292,7 @@ def _schedule_post(update, context, post_type: str):
 
     user = update.message.from_user
     save_user(user.id)
+    is_privileged = is_owner_or_mod(user.id)
     
     # 1. Ban Check
     if user.id in BANNED_USERS:
@@ -288,55 +313,63 @@ def _schedule_post(update, context, post_type: str):
 
     # --- Feature Toggle & Cooldown: Photo ---
     if post_type == 'photo':
-        if not PHOTOS_ENABLED:
+        if not PHOTOS_ENABLED and not is_privileged:
             update.message.reply_text("❌ Photo confessions are currently disabled.")
             return
         
-        now = datetime.datetime.now()
-        last_photo = user_photo_cooldowns.get(user.id)
-        if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
-            rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
-            hours_left = int(rem / 3600)
-            minutes_left = int((rem % 3600) / 60)
-            update.message.reply_text(f"⏳ Photos are limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
-            return
-        user_photo_cooldowns[user.id] = now
+        # Cooldown bypassed if privileged
+        if not is_privileged:
+            now = datetime.datetime.now()
+            last_photo = user_photo_cooldowns.get(user.id)
+            if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
+                rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
+                hours_left = int(rem / 3600)
+                minutes_left = int((rem % 3600) / 60)
+                update.message.reply_text(f"⏳ Photos are limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
+                return
+            user_photo_cooldowns[user.id] = now
 
     text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     
     # 3. Banned Word Check
-    if check_for_banned_words(text_to_check):
+    if check_for_banned_words(text_to_check) and not is_privileged:
         update.message.reply_text("❌ Your message contains words that are not allowed.")
         return
 
     # 4. Link Check & Toggle
     if contains_link(update.message):
-        if not LINKS_ENABLED:
+        if not LINKS_ENABLED and not is_privileged:
             update.message.reply_text("❌ Link sharing is currently disabled.")
             return
         
-        now = datetime.datetime.now()
-        last_link = user_link_cooldowns.get(user.id)
-        if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
-            rem = LINK_COOLDOWN - (now - last_link).total_seconds()
-            hours_left = int(rem / 3600)
-            minutes_left = int((rem % 3600) / 60)
-            update.message.reply_text(f"⏳ Links are limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
-            return
-        user_link_cooldowns[user.id] = now
+        # Cooldown bypassed if privileged
+        if not is_privileged:
+            now = datetime.datetime.now()
+            last_link = user_link_cooldowns.get(user.id)
+            if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
+                rem = LINK_COOLDOWN - (now - last_link).total_seconds()
+                hours_left = int(rem / 3600)
+                minutes_left = int((rem % 3600) / 60)
+                update.message.reply_text(f"⏳ Links are limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
+                return
+            user_link_cooldowns[user.id] = now
 
     # 5. Active Time Check (Queueing)
     base_delay = 0
-    if not is_bot_active() and user.id != OWNER_ID:
+    # Bypassed if privileged
+    if not is_bot_active() and not is_privileged:
         base_delay = get_seconds_until_active()
-        update.message.reply_text(f"🌙 Bot is currently in sleep mode (06:00 PM-09:00 PM). Your confession is queued for 09:00 PM.")
+        update.message.reply_text(f"🌙 Bot is currently in sleep mode (06:00 PM - 09:00 PM). Your confession is queued for 09:00 PM.")
 
     # 6. Queue Calculation
     now_tz = datetime.datetime.now(TIMEZONE)
-    current_queue_time = user_queues.get(user.id, now_tz)
-    if current_queue_time < now_tz: current_queue_time = now_tz
-
-    final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
+    
+    if is_privileged:
+        final_delay = 0  # Mods post instantly
+    else:
+        current_queue_time = user_queues.get(user.id, now_tz)
+        if current_queue_time < now_tz: current_queue_time = now_tz
+        final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
     
     job_context = {
         'chat_id': CHANNEL_ID, 
@@ -353,7 +386,9 @@ def _schedule_post(update, context, post_type: str):
         job_context['caption'] = text_to_check
         context.job_queue.run_once(post_photo, final_delay, context=job_context)
 
-    user_queues[user.id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
+    # Update queue only for non-privileged users
+    if not is_privileged:
+        user_queues[user.id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
     
     if base_delay == 0:
         if final_delay < 1:
@@ -373,16 +408,24 @@ def handle_delete(update, context):
 
     target_chat = str(update.message.forward_from_chat.id)
     if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
+        
+        is_privileged = is_owner_or_mod(user.id)
+        
         now = datetime.datetime.now()
-        last_del = user_delete_cooldowns.get(user.id)
-        if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
-            update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
-            return
+        # Bypass cooldown if privileged
+        if not is_privileged:
+            last_del = user_delete_cooldowns.get(user.id)
+            if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
+                update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
+                return
 
         try:
             msg_id = update.message.forward_from_message_id
             context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
-            user_delete_cooldowns[user.id] = now
+            
+            if not is_privileged:
+                user_delete_cooldowns[user.id] = now
+            
             update.message.reply_text("🗑 Message successfully deleted from channel.")
             
             # --- DELETION LOG ---
@@ -393,14 +436,26 @@ def handle_delete(update, context):
             safe_uid = escape_markdown(str(user.id))
             safe_content = escape_markdown(content)
             
-            log_txt = (
+            # 1. Owner Log
+            owner_log_txt = (
                 f"🗑 *DELETION LOG*\n"
                 f"*By:* {safe_user} (`{safe_uid}`)\n"
                 f"*Username:* {display_username}\n"
                 f"*Msg ID:* `{msg_id}`\n"
                 f"*Original Content:*\n{safe_content}"
             )
-            context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
+            context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='Markdown')
+
+            # 2. Moderator Log
+            mod_log_txt = (
+                f"🗑 *DELETION LOG (Moderator View)*\n"
+                f"*By User ID:* `{safe_uid}`\n"
+                f"*Name:* \\[HIDDEN\\]\n"
+                f"*Username:* \\[HIDDEN\\]\n"
+                f"*Msg ID:* `{msg_id}`\n"
+                f"*Original Content:*\n{safe_content}"
+            )
+            context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='Markdown')
             
         except Exception as e: 
             update.message.reply_text(f"❌ Could not delete: {e}")
@@ -410,18 +465,42 @@ def handle_delete(update, context):
 def is_owner(uid): 
     return uid == OWNER_ID
 
+# --- NEW: Moderator Management (Owner Only) ---
+def add_mod(update, context):
+    """Adds a user to the moderator list (Owner Only)"""
+    if not update.message or not is_owner(update.message.from_user.id): return
+    try:
+        target = int(context.args[0])
+        MODERATORS.add(target)
+        with open("moderators.txt", "w") as f:
+            for m in MODERATORS: f.write(f"{m}\n")
+        update.message.reply_text(f"👮‍♂️ User `{target}` is now a Moderator.", parse_mode='Markdown')
+    except: update.message.reply_text("Usage: /addmod <id>")
+
+def remove_mod(update, context):
+    """Removes a user from the moderator list (Owner Only)"""
+    if not update.message or not is_owner(update.message.from_user.id): return
+    try:
+        target = int(context.args[0])
+        MODERATORS.discard(target)
+        with open("moderators.txt", "w") as f:
+            for m in MODERATORS: f.write(f"{m}\n")
+        update.message.reply_text(f"✅ User `{target}` is no longer a Moderator.", parse_mode='Markdown')
+    except: update.message.reply_text("Usage: /removemod <id>")
+
+# --- Existing Commands ---
 def stats(update, context):
     """Shows bot statistics (Owner Only)"""
     if not update.message or not is_owner(update.message.from_user.id): return
     
-    # Calculate Uptime
     uptime = datetime.datetime.now() - BOT_START_TIME
-    uptime_str = str(uptime).split('.')[0] # Format as HH:MM:SS
+    uptime_str = str(uptime).split('.')[0] 
     
     msg = (
         f"📊 *Bot Statistics*\n\n"
         f"👥 *Total Users:* `{len(KNOWN_USERS)}`\n"
         f"🚫 *Banned Users:* `{len(BANNED_USERS)}`\n"
+        f"👮‍♂️ *Moderators:* `{len(MODERATORS)}`\n"
         f"⏳ *Uptime:* `{uptime_str}`\n\n"
         f"*Feature Status:*\n"
         f"🔗 Links: {'✅ Enabled' if LINKS_ENABLED else '❌ Disabled'}\n"
@@ -483,8 +562,9 @@ def unban_user(update, context):
         update.message.reply_text(f"✅ User `{target}` unbanned.", parse_mode='Markdown')
     except: update.message.reply_text("Usage: /unban <id>")
 
+# --- Updated: Timeout is now for Owner OR Moderator ---
 def timeout_user(update, context):
-    if not update.message or not is_owner(update.message.from_user.id): return
+    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target_id = int(context.args[0])
         minutes = int(context.args[1])
@@ -495,7 +575,7 @@ def timeout_user(update, context):
     except: update.message.reply_text("Usage: /timeout <id> <minutes>")
 
 def remove_timeout(update, context):
-    if not update.message or not is_owner(update.message.from_user.id): return
+    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target_id = int(context.args[0])
         if target_id in USER_TIMEOUTS:
@@ -617,8 +697,13 @@ def main():
         dp.add_handler(CommandHandler("broadcast", broadcast))
         dp.add_handler(CommandHandler("ban", ban_user))
         dp.add_handler(CommandHandler("unban", unban_user))
+        
+        # Moderator commands
+        dp.add_handler(CommandHandler("addmod", add_mod))
+        dp.add_handler(CommandHandler("removemod", remove_mod))
         dp.add_handler(CommandHandler("timeout", timeout_user))
         dp.add_handler(CommandHandler("untimeout", remove_timeout))
+        
         dp.add_handler(CommandHandler("addban", add_banned_word))
         dp.add_handler(CommandHandler("removeban", remove_banned_word))
         dp.add_handler(CommandHandler("clearqueue", clear_queue))
