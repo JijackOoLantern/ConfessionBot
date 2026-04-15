@@ -29,7 +29,7 @@ except ImportError:
 
 # --- Bot's Memory and Settings ---
 POST_DELAY = 15  # Cooldown between posts for all users, in seconds
-DELETE_COOLDOWN = 90  # Cooldown for deleting posts, in seconds
+DELETE_COOLDOWN = 60  # Cooldown for deleting posts, in seconds
 LINK_COOLDOWN = 14400 # 4 Hours cooldown for links
 PHOTO_COOLDOWN = 14400 # 4 Hours cooldown for media/photos
 TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
@@ -38,8 +38,8 @@ TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
 BOT_START_TIME = datetime.datetime.now()
 
 # Active Hours (24h format)
-START_HOUR = 21  # 21:00 (9:00 PM)
-END_HOUR = 18    # 18:00 (6:00 PM Next day)
+START_HOUR = 18  # 21:00 (9:00 PM)
+END_HOUR = 21    # 18:00 (6:00 PM Next day)
 
 # Feature Toggles
 LINKS_ENABLED = True
