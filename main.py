@@ -29,7 +29,7 @@ except ImportError:
 
 # --- Bot's Memory and Settings ---
 POST_DELAY = 15  # Cooldown between posts for all users, in seconds
-DELETE_COOLDOWN = 60  # Cooldown for deleting posts, in seconds
+DELETE_COOLDOWN = 90  # Cooldown for deleting posts, in seconds
 LINK_COOLDOWN = 14400 # 4 Hours cooldown for links
 PHOTO_COOLDOWN = 14400 # 4 Hours cooldown for media/photos
 TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
@@ -38,8 +38,8 @@ TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') # GMT+8
 BOT_START_TIME = datetime.datetime.now()
 
 # Active Hours (24h format)
-START_HOUR = 18  # 21:00 (9:00 PM)
-END_HOUR = 21    # 18:00 (6:00 PM Next day)
+START_HOUR = 21  # 21:00 (9:00 PM)
+END_HOUR = 18    # 18:00 (6:00 PM Next day)
 
 # Feature Toggles
 LINKS_ENABLED = True
@@ -568,6 +568,16 @@ def timeout_user(update, context):
         USER_TIMEOUTS[target_id] = expiry_time.timestamp()
         save_timeouts()
         update.message.reply_text(f"⏳ User {target_id} timed out for {minutes}m.")
+        
+        # --- LOG MODERATOR ACTION TO PRIVATE LOG ---
+        admin = update.message.from_user
+        log_txt = (
+            f"⚠️ *MODERATOR ACTION: TIMEOUT*\n"
+            f"*Admin:* {escape_markdown(admin.first_name)} (`{admin.id}`)\n"
+            f"*Target User ID:* `{target_id}`\n"
+            f"*Duration:* {minutes} minutes"
+        )
+        context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
     except: update.message.reply_text("Usage: /timeout <id> <minutes>")
 
 def remove_timeout(update, context):
@@ -578,6 +588,15 @@ def remove_timeout(update, context):
             del USER_TIMEOUTS[target_id]
             save_timeouts()
             update.message.reply_text(f"✅ Timeout removed for {target_id}.")
+            
+            # --- LOG MODERATOR ACTION TO PRIVATE LOG ---
+            admin = update.message.from_user
+            log_txt = (
+                f"⚠️ *MODERATOR ACTION: UNTIMEOUT*\n"
+                f"*Admin:* {escape_markdown(admin.first_name)} (`{admin.id}`)\n"
+                f"*Target User ID:* `{target_id}`"
+            )
+            context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
         else:
             update.message.reply_text("User is not timed out.")
     except: update.message.reply_text("Usage: /untimeout <id>")
