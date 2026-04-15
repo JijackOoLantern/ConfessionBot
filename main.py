@@ -230,9 +230,7 @@ def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_con
     
     log_message = (
         f"*New {content_type} Confession Log (Moderator View)*\n\n"
-        f"*User ID:* `{safe_uid}`\n"
-        f"*Name:* \\[HIDDEN\\]\n"
-        f"*Username:* \\[HIDDEN\\]\n\n"
+        f"*User ID:* `{safe_uid}`\n\n"
     )
     content_to_log = text_content or job_info.get('caption')
     if content_to_log:
@@ -450,8 +448,6 @@ def handle_delete(update, context):
             mod_log_txt = (
                 f"🗑 *DELETION LOG (Moderator View)*\n"
                 f"*By User ID:* `{safe_uid}`\n"
-                f"*Name:* \\[HIDDEN\\]\n"
-                f"*Username:* \\[HIDDEN\\]\n"
                 f"*Msg ID:* `{msg_id}`\n"
                 f"*Original Content:*\n{safe_content}"
             )
