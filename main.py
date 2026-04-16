@@ -169,6 +169,30 @@ def save_timeouts():
             if timestamp > datetime.datetime.now().timestamp():
                 f.write(f"{uid},{timestamp}\n")
 
+def is_user_restricted(user_id, update):
+    """Checks if a user is banned or timed out. Replies and returns True if restricted."""
+    if is_owner_or_mod(user_id):
+        return False # Owners and Mods bypass all restrictions
+        
+    # 1. Ban Check
+    if user_id in BANNED_USERS:
+        update.message.reply_text("🚫 You are permanently banned from using this bot.")
+        return True
+
+    # 2. Timeout Check
+    if user_id in USER_TIMEOUTS:
+        expiry = USER_TIMEOUTS[user_id]
+        remaining = expiry - datetime.datetime.now().timestamp()
+        if remaining > 0:
+            minutes_left = int(remaining / 60) + 1
+            update.message.reply_text(f"⏳ You are in timeout for breaking rules. You cannot use the bot for another {minutes_left} minutes.")
+            return True
+        else:
+            del USER_TIMEOUTS[user_id]
+            save_timeouts()
+            
+    return False
+
 def is_bot_active():
     """Checks if current time is within 21:00 (9 PM) - 18:00 (6 PM) GMT+8."""
     now = datetime.datetime.now(TIMEZONE)
@@ -292,22 +316,9 @@ def _schedule_post(update, context, post_type: str):
     save_user(user.id)
     is_privileged = is_owner_or_mod(user.id)
     
-    # 1. Ban Check
-    if user.id in BANNED_USERS:
-        update.message.reply_text("🚫 You are banned.")
-        return 
-
-    # 2. Timeout Check
-    if user.id in USER_TIMEOUTS:
-        expiry = USER_TIMEOUTS[user.id]
-        remaining = expiry - datetime.datetime.now().timestamp()
-        if remaining > 0:
-            minutes_left = int(remaining / 60)
-            update.message.reply_text(f"You are in timeout for breaking rules. You can post again in {minutes_left} minutes.")
-            return
-        else:
-            del USER_TIMEOUTS[user.id]
-            save_timeouts()
+    # Check restrictions (Bans & Timeouts)
+    if is_user_restricted(user.id, update):
+        return
 
     # --- Feature Toggle & Cooldown: Photo ---
     if post_type == 'photo':
@@ -402,7 +413,9 @@ def handle_delete(update, context):
     if not update.message or not update.message.from_user: return
     user = update.message.from_user
     
-    if user.id in BANNED_USERS or not update.message.forward_from_chat: return
+    # Check restrictions (Bans & Timeouts)
+    if is_user_restricted(user.id, update): return
+    if not update.message.forward_from_chat: return
 
     target_chat = str(update.message.forward_from_chat.id)
     if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
@@ -624,6 +637,9 @@ def remove_banned_word(update, context):
     except: update.message.reply_text("Usage: /removeban <word>")
 
 def clear_queue(update, context):
+    if not update.message or not update.message.from_user: return
+    if is_user_restricted(update.message.from_user.id, update): return
+
     if update.message.from_user.id in user_queues:
         del user_queues[update.message.from_user.id]
         update.message.reply_text("Queue cleared.")
@@ -631,11 +647,17 @@ def clear_queue(update, context):
         update.message.reply_text("Queue empty.")
 
 def banned_words_list(update, context):
+    if not update.message or not update.message.from_user: return
+    if is_user_restricted(update.message.from_user.id, update): return
+
     msg = ", ".join(sorted(BANNED_WORDS)) if BANNED_WORDS else "None."
     update.message.reply_text(f"Banned words: {msg}")
 
 # --- Help Conversation ---
 def help_command(update, context):
+    if not update.message or not update.message.from_user: return AWAITING_HELP_MESSAGE
+    if is_user_restricted(update.message.from_user.id, update): return ConversationHandler.END
+
     update.message.reply_text("Send your query. It will be forwarded to the owner.")
     return AWAITING_HELP_MESSAGE
 
@@ -651,12 +673,16 @@ def cancel(update, context):
 # --- User Commands ---
 
 def start(update, context):
-    if not update.message: return
+    if not update.message or not update.message.from_user: return
+    if is_user_restricted(update.message.from_user.id, update): return
+
     save_user(update.message.from_user.id)
     update.message.reply_text("👋 Hello! Send any text or photo to post it anonymously to the channel.")
 
 def guide(update, context):
-    if not update.message: return
+    if not update.message or not update.message.from_user: return
+    if is_user_restricted(update.message.from_user.id, update): return
+
     status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
     status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
     active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
