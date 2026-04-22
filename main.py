@@ -38,9 +38,8 @@ TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur')
 
 BOT_START_TIME = datetime.datetime.now()
 
-# Active Hours (Default 24h format, can be overridden by file)
-START_HOUR = 21  # 21:00 (9:00 PM)
-END_HOUR = 18    # 18:00 (6:00 PM Next day)
+START_HOUR = 21  
+END_HOUR = 18    
 
 LINKS_ENABLED = True
 PHOTOS_ENABLED = True
@@ -51,6 +50,9 @@ user_link_cooldowns: Dict[int, datetime.datetime] = {}
 user_photo_cooldowns: Dict[int, datetime.datetime] = {} 
 
 AWAITING_HELP_MESSAGE = 0
+
+# --- State Manager for Interactive Dashboard ---
+action_states: Dict[int, str] = {}
 
 # --- Environment Variable Loading & Validation ---
 try:
@@ -94,7 +96,6 @@ def load_ids(filename):
 KNOWN_USERS = load_ids("users.txt")
 MODERATORS = load_ids("moderators.txt") 
 
-# 1. Load Time Settings (NEW)
 def load_time_settings():
     global START_HOUR, END_HOUR
     try:
@@ -110,9 +111,8 @@ def save_time_settings():
     with open("active_time.txt", "w") as f:
         f.write(f"{START_HOUR},{END_HOUR}")
 
-load_time_settings() # Call immediately
+load_time_settings()
 
-# 2. Banned Users with Reasons (UPDATED)
 BANNED_USERS: Dict[int, str] = {}
 try:
     if os.path.exists("banned_users.txt"):
@@ -120,7 +120,7 @@ try:
             for line in f:
                 line = line.strip()
                 if not line: continue
-                parts = line.split(',', 1) # Split only on the first comma
+                parts = line.split(',', 1) 
                 uid = int(parts[0])
                 reason = parts[1] if len(parts) > 1 else "No reason provided."
                 BANNED_USERS[uid] = reason
@@ -129,13 +129,12 @@ try:
 except Exception as e:
     print(f"Warning: Could not load banned_users.txt: {e}")
 
-# 3. Timeouts with Reasons (UPDATED)
 USER_TIMEOUTS: Dict[int, Dict[str, Union[float, str]]] = {}
 try:
     with open("timeouts.txt", "r") as f:
         for line in f:
             if "," in line:
-                parts = line.strip().split(',', 2) # Split UID, Timestamp, Reason
+                parts = line.strip().split(',', 2)
                 uid = int(parts[0])
                 timestamp = float(parts[1])
                 reason = parts[2] if len(parts) > 2 else "No reason provided."
@@ -144,7 +143,6 @@ try:
 except FileNotFoundError:
     open("timeouts.txt", "a").close()
 
-# 4. Banned Words
 BANNED_WORDS: Set[str] = set()
 try:
     if os.path.exists("banned_words.txt"):
@@ -201,17 +199,14 @@ def save_timeouts():
                 f.write(f"{uid},{data['expiry']},{data['reason']}\n")
 
 def is_user_restricted(user_id, update):
-    """Checks if a user is banned or timed out. Replies with reason."""
     if is_owner_or_mod(user_id):
         return False 
         
-    # Ban Check
     if user_id in BANNED_USERS:
         reason = BANNED_USERS[user_id]
         update.message.reply_text(f"🚫 You are permanently banned from using this bot.\n\n*Reason:* {reason}", parse_mode='Markdown')
         return True
 
-    # Timeout Check
     if user_id in USER_TIMEOUTS:
         expiry = USER_TIMEOUTS[user_id]['expiry']
         reason = USER_TIMEOUTS[user_id]['reason']
@@ -228,7 +223,6 @@ def is_user_restricted(user_id, update):
     return False
 
 def format_time(hour_24):
-    """Formats 24h integer to 12h AM/PM string"""
     am_pm = "AM" if hour_24 < 12 else "PM"
     h = hour_24 if hour_24 <= 12 else hour_24 - 12
     if h == 0: h = 12
@@ -375,8 +369,8 @@ def _schedule_post(update, context, post_type: str):
     base_delay = 0
     if not is_bot_active() and not is_privileged:
         base_delay = get_seconds_until_active()
-        t_start = format_time(END_HOUR) # Sleep starts at END_HOUR
-        t_end = format_time(START_HOUR) # Wakes up at START_HOUR
+        t_start = format_time(END_HOUR)
+        t_end = format_time(START_HOUR)
         update.message.reply_text(f"🌙 Bot is currently in sleep mode ({t_start} - {t_end}). Your confession is queued for {t_end}.")
 
     now_tz = datetime.datetime.now(TIMEZONE)
@@ -412,8 +406,48 @@ def _schedule_post(update, context, post_type: str):
         else:
             update.message.reply_text(f"🕒 Queued. Will be posted in {int(final_delay)} seconds.")
 
-def handle_confession(u, c): _schedule_post(u, c, 'text')
-def handle_photo(u, c): _schedule_post(u, c, 'photo')
+def handle_confession(update, context): 
+    _schedule_post(update, context, 'text')
+    
+def handle_photo(update, context): 
+    _schedule_post(update, context, 'photo')
+
+# --- Interactive Input Wrappers ---
+def handle_text_input(update, context):
+    """Intercepts text if the user is in an active command state."""
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    
+    if user_id in action_states:
+        state = action_states[user_id]
+        context.args = update.message.text.split()
+        
+        if state == 'trig_ban': ban_user(update, context)
+        elif state == 'trig_unban': unban_user(update, context)
+        elif state == 'trig_timeout': timeout_user(update, context)
+        elif state == 'trig_rmtimeout': remove_timeout(update, context)
+        elif state == 'trig_addmod': add_mod(update, context)
+        elif state == 'trig_rmmod': remove_mod(update, context)
+        elif state == 'trig_addword': add_banned_word(update, context)
+        elif state == 'trig_rmword': remove_banned_word(update, context)
+        elif state == 'trig_settime': set_time(update, context)
+        
+        del action_states[user_id]
+        return
+        
+    handle_confession(update, context)
+
+def handle_photo_input(update, context):
+    """Intercepts photo if the user is in an active command state."""
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    
+    if user_id in action_states:
+        update.message.reply_text("❌ Action cancelled. I was expecting text for the command.")
+        del action_states[user_id]
+        return
+        
+    handle_photo(update, context)
 
 def handle_delete(update, context):
     if not update.message or not update.message.from_user: return
@@ -472,28 +506,24 @@ def handle_delete(update, context):
 
 # --- Admin & Mod Commands ---
 def add_mod(update, context):
-    if not update.message or not is_owner(update.message.from_user.id): return
     try:
         target = int(context.args[0])
         MODERATORS.add(target)
         with open("moderators.txt", "w") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         update.message.reply_text(f"👮‍♂️ User `{target}` is now a Moderator.", parse_mode='Markdown')
-    except: update.message.reply_text("Usage: /addmod <id>")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def remove_mod(update, context):
-    if not update.message or not is_owner(update.message.from_user.id): return
     try:
         target = int(context.args[0])
         MODERATORS.discard(target)
         with open("moderators.txt", "w") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         update.message.reply_text(f"✅ User `{target}` is no longer a Moderator.", parse_mode='Markdown')
-    except: update.message.reply_text("Usage: /removemod <id>")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def set_time(update, context):
-    """Sets the active hours (Owner Only)"""
-    if not update.message or not is_owner(update.message.from_user.id): return
     try:
         start_h = int(context.args[0])
         end_h = int(context.args[1])
@@ -509,7 +539,7 @@ def set_time(update, context):
         t_end = format_time(END_HOUR)
         update.message.reply_text(f"✅ Active time updated!\nStart: {t_start}\nEnd/Sleep: {t_end}")
     except: 
-        update.message.reply_text("Usage: /settime <start_hour_24h> <end_hour_24h>\nExample for 9PM to 6PM: `/settime 21 18`", parse_mode='Markdown')
+        update.message.reply_text("❌ Error. Ensure you use the 24-hour format.")
 
 def broadcast(update, context):
     if not update.message or not is_owner(update.message.from_user.id): return
@@ -529,10 +559,8 @@ def broadcast(update, context):
     update.message.reply_text(f"✅ Finished.\nSuccess: {sent}\nFailed: {failed}")
 
 def ban_user(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target = int(context.args[0])
-        # Join the rest of the arguments as the reason
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided."
         
         BANNED_USERS[target] = reason
@@ -541,7 +569,6 @@ def ban_user(update, context):
             
         update.message.reply_text(f"🚫 User `{target}` banned.\n*Reason:* {reason}", parse_mode='Markdown')
         
-        # Log Action
         admin = update.message.from_user
         log_txt = (
             f"⚠️ *MODERATOR ACTION: BAN*\n"
@@ -550,10 +577,9 @@ def ban_user(update, context):
             f"*Reason:* {escape_markdown(reason)}"
         )
         context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
-    except: update.message.reply_text("Usage: /ban <id> <reason>")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def unban_user(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target = int(context.args[0])
         if target in BANNED_USERS:
@@ -562,7 +588,6 @@ def unban_user(update, context):
                 for u, r in BANNED_USERS.items(): f.write(f"{u},{r}\n")
             update.message.reply_text(f"✅ User `{target}` unbanned.", parse_mode='Markdown')
             
-            # Log Action
             admin = update.message.from_user
             log_txt = (
                 f"⚠️ *MODERATOR ACTION: UNBAN*\n"
@@ -571,11 +596,10 @@ def unban_user(update, context):
             )
             context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
         else:
-            update.message.reply_text("User is not banned.")
-    except: update.message.reply_text("Usage: /unban <id>")
+            update.message.reply_text("❌ User is not currently banned.")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def timeout_user(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target_id = int(context.args[0])
         minutes = int(context.args[1])
@@ -595,10 +619,9 @@ def timeout_user(update, context):
             f"*Reason:* {escape_markdown(reason)}"
         )
         context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
-    except: update.message.reply_text("Usage: /timeout <id> <minutes> <reason>")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def remove_timeout(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         target_id = int(context.args[0])
         if target_id in USER_TIMEOUTS:
@@ -614,30 +637,28 @@ def remove_timeout(update, context):
             )
             context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='Markdown')
         else:
-            update.message.reply_text("User is not timed out.")
-    except: update.message.reply_text("Usage: /untimeout <id>")
+            update.message.reply_text("❌ User is not timed out.")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def add_banned_word(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         word = " ".join(context.args).lower()
         if not word: raise IndexError
         BANNED_WORDS.add(word)
         with open("banned_words.txt", "w") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
-        update.message.reply_text(f"🚫 Banned: {word}")
-    except: update.message.reply_text("Usage: /addban <word>")
+        update.message.reply_text(f"🚫 Banned word added: {word}")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def remove_banned_word(update, context):
-    if not update.message or not is_owner_or_mod(update.message.from_user.id): return
     try:
         word = " ".join(context.args).lower()
         if not word: raise IndexError
         BANNED_WORDS.discard(word)
         with open("banned_words.txt", "w") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
-        update.message.reply_text(f"✅ Unbanned: {word}")
-    except: update.message.reply_text("Usage: /removeban <word>")
+        update.message.reply_text(f"✅ Banned word removed: {word}")
+    except: update.message.reply_text("❌ Error. Incorrect format used.")
 
 def clear_queue(update, context):
     if not update.message or not update.message.from_user: return
@@ -649,7 +670,7 @@ def clear_queue(update, context):
     else:
         update.message.reply_text("Queue empty.")
 
-# --- Help Conversation ---
+# --- Help Conversation & Global Cancel ---
 def help_command(update, context):
     if not update.message or not update.message.from_user: return AWAITING_HELP_MESSAGE
     if is_user_restricted(update.message.from_user.id, update): return ConversationHandler.END
@@ -663,19 +684,26 @@ def forward_help(update, context):
     return ConversationHandler.END
 
 def cancel(update, context):
+    """Global Cancel for States and Conversations"""
+    if not update.message or not update.message.from_user: return ConversationHandler.END
+    user_id = update.message.from_user.id
+    
+    if user_id in action_states:
+        del action_states[user_id]
+        update.message.reply_text("✅ Action cancelled. Returned to normal mode.")
+        return ConversationHandler.END
+        
     update.message.reply_text("Cancelled.")
     return ConversationHandler.END
 
 # --- User & Menu Commands ---
 
 def get_main_menu(user_id):
-    """Helper function to generate the correct keyboard based on user role."""
     keyboard = []
-    
     if is_owner(user_id):
         role_title = "👑 Owner Panel"
         keyboard = [
-            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("⏰ Edit Active Time", callback_data='menu_active_time')],
+            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time')],
             [InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods'), InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans')],
             [InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts'), InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
             [InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links'), InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos')],
@@ -693,8 +721,8 @@ def get_main_menu(user_id):
     else:
         role_title = "User"
         keyboard = [
-            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear')],
-            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🤬 View Banned Words", callback_data='menu_view_words')],
+            [InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
         
     return role_title, InlineKeyboardMarkup(keyboard)
@@ -705,6 +733,8 @@ def start(update, context):
     if is_user_restricted(user_id, update): return
 
     save_user(user_id)
+    if user_id in action_states:
+        del action_states[user_id]
     
     role_title, reply_markup = get_main_menu(user_id)
     greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
@@ -722,8 +752,8 @@ def menu_button_handler(update, context):
     query.answer() 
     user_id = query.from_user.id
 
-    # --- Common / Return Menu ---
     if query.data == 'menu_back':
+        if user_id in action_states: del action_states[user_id]
         role_title, reply_markup = get_main_menu(user_id)
         greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
         query.edit_message_text(
@@ -732,12 +762,10 @@ def menu_button_handler(update, context):
             reply_markup=reply_markup
         )
 
-    # --- Standard User Features ---
     elif query.data == 'menu_guide':
         status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
         status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
         active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
-        
         t_start = format_time(START_HOUR)
         t_end = format_time(END_HOUR)
         
@@ -771,9 +799,9 @@ def menu_button_handler(update, context):
             query.edit_message_text(text="⚠️ Your queue is already empty.")
 
     elif query.data == 'menu_close':
+        if user_id in action_states: del action_states[user_id]
         query.edit_message_text(text="👋 Menu closed. Send a message or photo to confess.")
 
-    # --- Owner & Moderator Submenus ---
     elif query.data == 'menu_stats':
         if not is_owner(user_id): return
         uptime = datetime.datetime.now() - BOT_START_TIME
@@ -808,66 +836,88 @@ def menu_button_handler(update, context):
         query.edit_message_text(text=f"📸 Photo posts are now {'ENABLED' if PHOTOS_ENABLED else 'DISABLED'}.", reply_markup=markup)
         context.bot.send_message(chat_id=CHANNEL_ID, text=f"📢 Notice: Photo confessions have been {status} by the administrator.")
 
-    # -- Interactive Control Panels --
+    # --- Interactive Submenus ---
+    
+    elif query.data == 'menu_manage_bans':
+        if not is_owner_or_mod(user_id): return
+        txt = "🚫 *Ban Management*\nChoose an action below:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), 
+             InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
+        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
+        
+    elif query.data == 'menu_manage_timeouts':
+        if not is_owner_or_mod(user_id): return
+        txt = "⏳ *Timeout Management*\nChoose an action below:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⏱️ Timeout User", callback_data='trig_timeout'), 
+             InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
+        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
+        
+    elif query.data == 'menu_manage_mods':
+        if not is_owner(user_id): return
+        txt = "👮‍♂️ *Moderator Management*\nChoose an action below:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Add Mod", callback_data='trig_addmod'), 
+             InlineKeyboardButton("➖ Remove Mod", callback_data='trig_rmmod')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
+        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
+        
+    elif query.data == 'menu_manage_words':
+        if not is_owner_or_mod(user_id): return
+        txt = "🤬 *Banned Words Management*\nChoose an action below:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👁️ View Words", callback_data='menu_view_words')],
+            [InlineKeyboardButton("➕ Add Word", callback_data='trig_addword'), 
+             InlineKeyboardButton("➖ Remove Word", callback_data='trig_rmword')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
+        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
+
     elif query.data == 'menu_active_time':
         if not is_owner(user_id): return
         t_start = format_time(START_HOUR)
         t_end = format_time(END_HOUR)
-        txt = (
-            f"⏰ *Active Time Panel*\n\n"
-            f"*Current Start Time:* {t_start}\n"
-            f"*Current End (Sleep) Time:* {t_end}\n\n"
-            f"*How to change it:*\n"
-            f"Type `/settime <start_hour> <end_hour>` using the 24-hour clock.\n\n"
-            f"_Example for 9 PM to 6 PM:_\n`/settime 21 18`"
-        )
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
+        txt = f"⏰ *Active Time Panel*\nCurrent Start: {t_start}\nCurrent Sleep: {t_end}\nChoose an action:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✏️ Edit Time", callback_data='trig_settime')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
         query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
 
-    elif query.data == 'menu_manage_mods':
-        if not is_owner(user_id): return
-        txt = (
-            "👮‍♂️ *Moderator Management*\n\n"
-            "*To Add a Mod:*\n`/addmod <User_ID>`\n\n"
-            "*To Remove a Mod:*\n`/removemod <User_ID>`"
-        )
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
-        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
-
-    elif query.data == 'menu_manage_bans':
-        if not is_owner_or_mod(user_id): return
-        txt = (
-            "🚫 *Ban Management*\n\n"
-            "*To Ban a User:*\n`/ban <User_ID> <Reason>`\n"
-            "_Example: /ban 123456789 Spamming the chat_\n\n"
-            "*To Unban a User:*\n`/unban <User_ID>`"
-        )
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
-        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
-
-    elif query.data == 'menu_manage_timeouts':
-        if not is_owner_or_mod(user_id): return
-        txt = (
-            "⏳ *Timeout Management*\n\n"
-            "*To Timeout a User:*\n`/timeout <User_ID> <Minutes> <Reason>`\n"
-            "_Example: /timeout 123456789 60 Flooding_\n\n"
-            "*To Remove Timeout:*\n`/untimeout <User_ID>`"
-        )
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
-        query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
-
-    elif query.data == 'menu_manage_words':
-        if not is_owner_or_mod(user_id): return
+    elif query.data == 'menu_view_words':
         msg = ", ".join(sorted(BANNED_WORDS)) if BANNED_WORDS else "None."
-        txt = (
-            f"🤬 *Banned Words Management*\n\n"
-            f"*Current Banned Words:*\n`{msg}`\n\n"
-            f"*To Add a Word:*\n`/addban <word>`\n\n"
-            f"*To Remove a Word:*\n`/removeban <word>`"
-        )
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
+        txt = f"🤬 *Current Banned Words:*\n`{msg}`"
+        
+        # Smart Back Button depending on who clicked it
+        if is_owner_or_mod(user_id):
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_manage_words')]])
+        else:
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
 
+    # --- Active Action Triggers (State Setters) ---
+    elif query.data.startswith('trig_'):
+        action_states[user_id] = query.data
+        
+        prompts = {
+            'trig_ban': "🔨 *Ban User*\nPlease send the target User ID and Reason.\n_Example:_ `123456789 Spamming`\n\nType /cancel to abort.",
+            'trig_unban': "✅ *Unban User*\nPlease send the target User ID to unban.\n_Example:_ `123456789`\n\nType /cancel to abort.",
+            'trig_timeout': "⏱️ *Timeout User*\nPlease send the User ID, Minutes, and Reason.\n_Example:_ `123456789 60 Flooding chat`\n\nType /cancel to abort.",
+            'trig_rmtimeout': "✅ *Remove Timeout*\nPlease send the target User ID to remove timeout.\n_Example:_ `123456789`\n\nType /cancel to abort.",
+            'trig_addmod': "➕ *Add Moderator*\nPlease send the User ID to promote.\n_Example:_ `123456789`\n\nType /cancel to abort.",
+            'trig_rmmod': "➖ *Remove Moderator*\nPlease send the User ID to demote.\n_Example:_ `123456789`\n\nType /cancel to abort.",
+            'trig_addword': "➕ *Add Banned Word*\nPlease send the word you want to ban.\n_Example:_ `badword`\n\nType /cancel to abort.",
+            'trig_rmword': "➖ *Remove Banned Word*\nPlease send the word you want to unban.\n_Example:_ `badword`\n\nType /cancel to abort.",
+            'trig_settime': "✏️ *Set Active Time*\nPlease send the Start and End hours (24h format).\n_Example for 9PM to 6PM:_ `21 18`\n\nType /cancel to abort.",
+        }
+        
+        query.edit_message_text(text=prompts.get(query.data, "Please provide input. Type /cancel to abort."), parse_mode='Markdown')
 
 def error_handler(update, context):
     if isinstance(context.error, NetworkError):
@@ -889,27 +939,29 @@ def main():
         ))
 
         dp.add_handler(CommandHandler("start", start))
+        dp.add_handler(CommandHandler("cancel", cancel)) # Global cancel handler
         
-        # Menu Interaction Handler
-        dp.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^menu_'))
+        dp.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_)'))
         
+        # We can keep standard commands active for quick usage
         dp.add_handler(CommandHandler("settime", set_time))
         dp.add_handler(CommandHandler("broadcast", broadcast))
         dp.add_handler(CommandHandler("ban", ban_user))
         dp.add_handler(CommandHandler("unban", unban_user))
-        
         dp.add_handler(CommandHandler("addmod", add_mod))
         dp.add_handler(CommandHandler("removemod", remove_mod))
         dp.add_handler(CommandHandler("timeout", timeout_user))
         dp.add_handler(CommandHandler("untimeout", remove_timeout))
-        
         dp.add_handler(CommandHandler("addban", add_banned_word))
         dp.add_handler(CommandHandler("removeban", remove_banned_word))
         dp.add_handler(CommandHandler("clearqueue", clear_queue))
         
+        # Handlers
         dp.add_handler(MessageHandler(Filters.forwarded, handle_delete))
-        dp.add_handler(MessageHandler(Filters.photo, handle_photo))
-        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_confession))
+        
+        # New Interactive Wrappers
+        dp.add_handler(MessageHandler(Filters.photo, handle_photo_input))
+        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text_input))
 
         updater.start_polling()
         
