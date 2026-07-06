@@ -311,7 +311,7 @@ async def post_photo(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Auto Reply for Groups/Channel DMs ---
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intercepts messages in Channel DMs and explicitly targets the topic ID."""
+    """Intercepts messages in Channel DMs and uses native reply."""
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
@@ -323,14 +323,10 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
     
     if is_channel_dm:
-        topic_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
         try:
-            await context.bot.send_message(
-                chat_id=msg.chat_id,
-                text=AUTO_REPLY_TEXT,
-                message_thread_id=topic_id
-            )
-            print(f"✅ Auto-reply sent to Channel DM! (Topic ID: {topic_id})")
+            # Native reply_text magically handles the hidden topic IDs perfectly
+            await msg.reply_text(AUTO_REPLY_TEXT)
+            print("✅ Auto-reply sent to Channel DM!")
         except Exception as e:
             print(f"❌ Failed to auto-reply to Channel DM: {e}")
 
