@@ -53,7 +53,7 @@ PHOTOS_ENABLED = True
 AUTO_REPLY_ENABLED = True
 AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
 
-# --- Terms and Conditions Text ---
+# --- NEW: Terms and Conditions Text ---
 TNC_TEXT = (
     "👋 Hello!\n"
     "Welcome to Tapah Confession Bot.\n\n"
@@ -97,23 +97,23 @@ def load_ids(filename):
     ids = set()
     try:
         if os.path.exists(filename):
-            with open(filename, "r") as f:
+            with open(filename, "r", encoding="utf-8") as f:
                 ids = {int(line.strip()) for line in f if line.strip().isdigit()}
         else:
-            open(filename, "a").close()
+            open(filename, "a", encoding="utf-8").close()
     except Exception as e:
         print(f"Warning: Could not load {filename}: {e}")
     return ids
 
 KNOWN_USERS = load_ids("users.txt")
 MODERATORS = load_ids("moderators.txt") 
-AGREED_USERS = load_ids("agreed_users.txt") 
+AGREED_USERS = load_ids("agreed_users.txt") # NEW: Load users who accepted T&Cs
 
 def load_time_settings():
     global START_HOUR, END_HOUR
     try:
         if os.path.exists("active_time.txt"):
-            with open("active_time.txt", "r") as f:
+            with open("active_time.txt", "r", encoding="utf-8") as f:
                 parts = f.read().strip().split(',')
                 START_HOUR = int(parts[0])
                 END_HOUR = int(parts[1])
@@ -121,7 +121,7 @@ def load_time_settings():
         pass
 
 def save_time_settings():
-    with open("active_time.txt", "w") as f:
+    with open("active_time.txt", "w", encoding="utf-8") as f:
         f.write(f"{START_HOUR},{END_HOUR}")
 
 load_time_settings()
@@ -130,18 +130,18 @@ def load_autoreply_settings():
     global AUTO_REPLY_ENABLED, AUTO_REPLY_TEXT
     try:
         if os.path.exists("autoreply_status.txt"):
-            with open("autoreply_status.txt", "r") as f:
+            with open("autoreply_status.txt", "r", encoding="utf-8") as f:
                 AUTO_REPLY_ENABLED = f.read().strip() == "True"
         if os.path.exists("autoreply_text.txt"):
-            with open("autoreply_text.txt", "r") as f:
+            with open("autoreply_text.txt", "r", encoding="utf-8") as f:
                 AUTO_REPLY_TEXT = f.read().strip()
     except Exception:
         pass
 
 def save_autoreply_settings():
-    with open("autoreply_status.txt", "w") as f:
+    with open("autoreply_status.txt", "w", encoding="utf-8") as f:
         f.write(str(AUTO_REPLY_ENABLED))
-    with open("autoreply_text.txt", "w") as f:
+    with open("autoreply_text.txt", "w", encoding="utf-8") as f:
         f.write(AUTO_REPLY_TEXT)
 
 load_autoreply_settings()
@@ -149,7 +149,7 @@ load_autoreply_settings()
 BANNED_USERS: Dict[int, str] = {}
 try:
     if os.path.exists("banned_users.txt"):
-        with open("banned_users.txt", "r") as f:
+        with open("banned_users.txt", "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line: continue
@@ -158,13 +158,13 @@ try:
                 reason = parts[1] if len(parts) > 1 else "No reason provided."
                 BANNED_USERS[uid] = reason
     else:
-        open("banned_users.txt", "a").close()
+        open("banned_users.txt", "a", encoding="utf-8").close()
 except Exception:
     pass
 
 USER_TIMEOUTS: Dict[int, Dict[str, Union[float, str]]] = {}
 try:
-    with open("timeouts.txt", "r") as f:
+    with open("timeouts.txt", "r", encoding="utf-8") as f:
         for line in f:
             if "," in line:
                 parts = line.strip().split(',', 2) 
@@ -174,15 +174,15 @@ try:
                 if float(timestamp) > datetime.datetime.now().timestamp():
                     USER_TIMEOUTS[int(uid)] = {'expiry': timestamp, 'reason': reason}
 except FileNotFoundError:
-    open("timeouts.txt", "a").close()
+    open("timeouts.txt", "a", encoding="utf-8").close()
 
 BANNED_WORDS: Set[str] = set()
 try:
     if os.path.exists("banned_words.txt"):
-        with open("banned_words.txt", "r") as f:
+        with open("banned_words.txt", "r", encoding="utf-8") as f:
             BANNED_WORDS = {line.strip().lower() for line in f if line.strip()}
     else:
-        open("banned_words.txt", "a").close()
+        open("banned_words.txt", "a", encoding="utf-8").close()
 except Exception:
     pass
 
@@ -191,15 +191,16 @@ def is_owner_or_mod(uid): return uid == OWNER_ID or uid in MODERATORS
 def is_owner(uid): return uid == OWNER_ID
 
 def save_timeouts():
-    with open("timeouts.txt", "w") as f:
+    with open("timeouts.txt", "w", encoding="utf-8") as f:
         for uid, data in USER_TIMEOUTS.items():
             if data['expiry'] > datetime.datetime.now().timestamp():
                 f.write(f"{uid},{data['expiry']},{data['reason']}\n")
 
+# NEW: Save function for T&C Agreement
 def save_agreed_user(uid):
     if uid not in AGREED_USERS:
         AGREED_USERS.add(uid)
-        with open("agreed_users.txt", "a") as f:
+        with open("agreed_users.txt", "a", encoding="utf-8") as f:
             f.write(f"{uid}\n")
 
 async def is_user_restricted(user_id, update: Update):
@@ -211,15 +212,15 @@ async def is_user_restricted(user_id, update: Update):
 
     if user_id in USER_TIMEOUTS:
         expiry = USER_TIMEOUTS[user_id]['expiry']
+        reason = USER_TIMEOUTS[user_id]['reason']
         remaining = expiry - datetime.datetime.now().timestamp()
         if remaining > 0:
             minutes_left = int(remaining / 60) + 1
-            await update.message.reply_text(f"⏳ You are in timeout. You cannot use the bot for another {minutes_left} minutes.\n<b>Reason:</b> {html.escape(USER_TIMEOUTS[user_id]['reason'])}", parse_mode='HTML')
+            await update.message.reply_text(f"⏳ You are in timeout. You cannot use the bot for another {minutes_left} minutes.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
             return True
         else:
             del USER_TIMEOUTS[user_id]
             save_timeouts()
-            
     return False
 
 def format_time(hour_24):
@@ -243,14 +244,13 @@ def get_seconds_until_active():
 def save_user(uid):
     if uid not in KNOWN_USERS:
         KNOWN_USERS.add(uid)
-        with open("users.txt", "a") as f: f.write(f"{uid}\n")
+        with open("users.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
 
 def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        pattern = r'\b' + re.escape(word) + r'\b'
-        if re.search(pattern, text_lower): return True
+        if re.search(r'\b' + re.escape(word) + r'\b', text_lower): return True
     return False
 
 def contains_link(message) -> bool:
@@ -353,12 +353,14 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             return
         if not is_privileged:
             now = datetime.datetime.now()
-            last_photo = user_photo_cooldowns.get(user_id)
+            last_photo = user_photo_cooldowns.get(user.id)
             if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
                 rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
-                await update.message.reply_text(f"⏳ Photos limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {int(rem/3600)}h {int((rem%3600)/60)}m.")
+                hours_left = int(rem / 3600)
+                minutes_left = int((rem % 3600) / 60)
+                await update.message.reply_text(f"⏳ Photos limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
                 return
-            user_photo_cooldowns[user_id] = now
+            user_photo_cooldowns[user.id] = now
 
     text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     if check_for_banned_words(text_to_check) and not is_privileged:
@@ -371,12 +373,14 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             return
         if not is_privileged:
             now = datetime.datetime.now()
-            last_link = user_link_cooldowns.get(user_id)
+            last_link = user_link_cooldowns.get(user.id)
             if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
                 rem = LINK_COOLDOWN - (now - last_link).total_seconds()
-                await update.message.reply_text(f"⏳ Links limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {int(rem/3600)}h {int((rem%3600)/60)}m.")
+                hours_left = int(rem / 3600)
+                minutes_left = int((rem % 3600) / 60)
+                await update.message.reply_text(f"⏳ Links limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
                 return
-            user_link_cooldowns[user_id] = now
+            user_link_cooldowns[user.id] = now
 
     base_delay = 0
     if not is_bot_active() and not is_privileged:
@@ -387,11 +391,11 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     if is_privileged:
         final_delay = 0 
     else:
-        current_queue_time = user_queues.get(user_id, now_tz)
+        current_queue_time = user_queues.get(user.id, now_tz)
         if current_queue_time < now_tz: current_queue_time = now_tz
         final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
     
-    job_context = {'chat_id': CHANNEL_ID, 'user_id': user_id, 'user_name': user.first_name, 'username': user.username}
+    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username}
     
     if post_type == 'text':
         job_context['text'] = text_to_check
@@ -402,7 +406,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         context.job_queue.run_once(post_photo, final_delay, data=job_context)
 
     if not is_privileged:
-        user_queues[user_id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
+        user_queues[user.id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
     
     if base_delay == 0:
         if final_delay < 1: await update.message.reply_text("✅ Confession sent anonymously!")
@@ -475,16 +479,16 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # ----------------------------
 
-    if await is_user_restricted(user_id, update): return
+    if await is_user_restricted(user.id, update): return
     if not update.message.forward_from_chat: return
 
     target_chat = str(update.message.forward_from_chat.id)
     if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
-        is_privileged = is_owner_or_mod(user_id)
+        is_privileged = is_owner_or_mod(user.id)
         now = datetime.datetime.now()
         
         if not is_privileged:
-            last_del = user_delete_cooldowns.get(user_id)
+            last_del = user_delete_cooldowns.get(user.id)
             if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
                 await update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
                 return
@@ -493,30 +497,25 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg_id = update.message.forward_from_message_id
             await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
             
-            if not is_privileged: user_delete_cooldowns[user_id] = now
+            if not is_privileged: user_delete_cooldowns[user.id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
             content = update.message.text or update.message.caption or "[Media with no caption]"
             raw_username = user.username
             display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
             safe_user = html.escape(str(user.first_name))
-            safe_uid = html.escape(str(user_id))
+            safe_uid = html.escape(str(user.id))
             safe_content = html.escape(content)
             
             owner_log_txt = (
-                f"🗑 <b>DELETION LOG</b>\n"
-                f"<b>By:</b> {safe_user} (<code>{safe_uid}</code>)\n"
-                f"<b>Username:</b> {display_username}\n"
-                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
-                f"<b>Original Content:</b>\n{safe_content}"
+                f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             )
             await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='HTML')
 
             mod_log_txt = (
-                f"🗑 <b>DELETION LOG (Moderator View)</b>\n"
-                f"<b>By User ID:</b> <code>{safe_uid}</code>\n"
-                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
-                f"<b>Original Content:</b>\n{safe_content}"
+                f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             )
             await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='HTML')
             
@@ -527,7 +526,7 @@ async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target = int(context.args[0])
         MODERATORS.add(target)
-        with open("moderators.txt", "w") as f:
+        with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         await update.message.reply_text(f"👮‍♂️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
     except: await update.message.reply_text("❌ Error. Incorrect format used.")
@@ -536,7 +535,7 @@ async def remove_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target = int(context.args[0])
         MODERATORS.discard(target)
-        with open("moderators.txt", "w") as f:
+        with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         await update.message.reply_text(f"✅ User <code>{target}</code> is no longer a Moderator.", parse_mode='HTML')
     except: await update.message.reply_text("❌ Error. Incorrect format used.")
@@ -573,7 +572,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = int(context.args[0])
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided."
         BANNED_USERS[target] = reason
-        with open("banned_users.txt", "w") as f:
+        with open("banned_users.txt", "w", encoding="utf-8") as f:
             for u, r in BANNED_USERS.items(): f.write(f"{u},{r}\n")
         await update.message.reply_text(f"🚫 User `{target}` banned.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
         admin = update.message.from_user
@@ -586,7 +585,7 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target = int(context.args[0])
         if target in BANNED_USERS:
             del BANNED_USERS[target]
-            with open("banned_users.txt", "w") as f:
+            with open("banned_users.txt", "w", encoding="utf-8") as f:
                 for u, r in BANNED_USERS.items(): f.write(f"{u},{r}\n")
             await update.message.reply_text(f"✅ User <code>{target}</code> unbanned.", parse_mode='HTML')
             admin = update.message.from_user
@@ -627,7 +626,7 @@ async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
         word = " ".join(context.args).lower()
         if not word: raise IndexError
         BANNED_WORDS.add(word)
-        with open("banned_words.txt", "w") as f:
+        with open("banned_words.txt", "w", encoding="utf-8") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
         await update.message.reply_text(f"🚫 Banned word added: {word}")
     except: await update.message.reply_text("❌ Error. Incorrect format used.")
@@ -637,7 +636,7 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         word = " ".join(context.args).lower()
         if not word: raise IndexError
         BANNED_WORDS.discard(word)
-        with open("banned_words.txt", "w") as f:
+        with open("banned_words.txt", "w", encoding="utf-8") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
         await update.message.reply_text(f"✅ Banned word removed: {word}")
     except: await update.message.reply_text("❌ Error. Incorrect format used.")
@@ -760,7 +759,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
         
         txt = f"""
-*Confession Bot Guide*
+<b>Confession Bot Guide</b>
 @TapahConfessions
 - Posts are anonymous.
 - To delete your post: Forward it from the channel back to this bot.
@@ -770,16 +769,16 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 - Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
 - No banned words allowed.
 
-*Active Hours:*
+<b>Active Hours:</b>
 - {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
 - Current Status: {active_status}
 
-*Permissions:*
+<b>Permissions:</b>
 - Links: {status_links}
 - Photos: {status_photos}
         """
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
-        await query.edit_message_text(text=txt, parse_mode='Markdown', reply_markup=markup)
+        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_clear':
         if user_id in user_queues:
