@@ -311,28 +311,36 @@ async def post_photo(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Auto Reply for Groups/Channel DMs ---
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intercepts messages in Channel DMs and explicitly targets the topic ID."""
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
     
-    if str(msg.from_user.id) == str(OWNER_ID): return
+    # --- I HAVE COMMENTED THIS OUT SO YOU CAN TEST IT AS THE OWNER! ---
+    # Once you test it and it works, you can remove the '#' below to turn it back on.
+    # if str(msg.from_user.id) == str(OWNER_ID): return
+    # ------------------------------------------------------------------
     
-    raw_msg = msg.to_dict()
-    is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
-    
-    if is_channel_dm:
-        # Extract the hidden topic ID that Telegram uses for Channel DMs
-        topic_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
-        try:
-            await context.bot.send_message(
-                chat_id=msg.chat_id,
-                text=AUTO_REPLY_TEXT,
-                message_thread_id=topic_id
-            )
-            print(f"✅ Auto-reply sent to Channel DM! (Topic ID: {topic_id})")
-        except Exception as e:
-            print(f"❌ Failed to auto-reply to Channel DM: {e}")
+    print(f"\n--- 📥 INCOMING GROUP MESSAGE ---")
+    print(f"Chat ID: {msg.chat.id}")
+
+    # Extract thread/topic ID explicitly
+    thread_id = msg.message_thread_id
+    if not thread_id:
+        raw_msg = msg.to_dict()
+        thread_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
+        
+    print(f"Target Thread ID: {thread_id}")
+
+    try:
+        await context.bot.send_message(
+            chat_id=msg.chat.id,
+            text=AUTO_REPLY_TEXT,
+            reply_to_message_id=msg.message_id,
+            message_thread_id=thread_id
+        )
+        print("✅ Auto-reply sent successfully!")
+    except Exception as e:
+        print(f"❌ Failed to auto-reply: {e}")
 
 # --- Handlers ---
 async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_type: str):
@@ -399,7 +407,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         if current_queue_time < now_tz: current_queue_time = now_tz
         final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
     
-    job_context = {'chat_id': CHANNEL_ID, 'user_id': user_id, 'user_name': user.first_name, 'username': user.username}
+    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username}
     
     if post_type == 'text':
         job_context['text'] = text_to_check
@@ -410,7 +418,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         context.job_queue.run_once(post_photo, final_delay, data=job_context)
 
     if not is_privileged:
-        user_queues[user_id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
+        user_queues[user.id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
     
     if base_delay == 0:
         if final_delay < 1: await update.message.reply_text("✅ Confession sent anonymously!")
@@ -483,7 +491,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # ----------------------------
 
-    if await is_user_restricted(user_id, update): return
+    if await is_user_restricted(user.id, update): return
     if not update.message.forward_from_chat: return
 
     target_chat = str(update.message.forward_from_chat.id)
@@ -492,7 +500,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.datetime.now()
         
         if not is_privileged:
-            last_del = user_delete_cooldowns.get(user_id)
+            last_del = user_delete_cooldowns.get(user.id)
             if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
                 await update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
                 return
@@ -512,19 +520,14 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_content = html.escape(content)
             
             owner_log_txt = (
-                f"🗑 <b>DELETION LOG</b>\n"
-                f"<b>By:</b> {safe_user} (<code>{safe_uid}</code>)\n"
-                f"<b>Username:</b> {display_username}\n"
-                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
-                f"<b>Original Content:</b>\n{safe_content}"
+                f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             )
             await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='HTML')
 
             mod_log_txt = (
-                f"🗑 <b>DELETION LOG (Moderator View)</b>\n"
-                f"<b>By User ID:</b> <code>{safe_uid}</code>\n"
-                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
-                f"<b>Original Content:</b>\n{safe_content}"
+                f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             )
             await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='HTML')
             
