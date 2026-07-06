@@ -28,7 +28,7 @@ logging.basicConfig(
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Load .env file for local testing (VS Code)
+# Load .env file for local testing
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -53,7 +53,7 @@ PHOTOS_ENABLED = True
 AUTO_REPLY_ENABLED = True
 AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
 
-# --- NEW: Terms and Conditions Text ---
+# --- Terms and Conditions Text ---
 TNC_TEXT = (
     "👋 Hello!\n"
     "Welcome to Tapah Confession Bot.\n\n"
@@ -107,7 +107,7 @@ def load_ids(filename):
 
 KNOWN_USERS = load_ids("users.txt")
 MODERATORS = load_ids("moderators.txt") 
-AGREED_USERS = load_ids("agreed_users.txt") # NEW: Load users who accepted T&Cs
+AGREED_USERS = load_ids("agreed_users.txt") 
 
 def load_time_settings():
     global START_HOUR, END_HOUR
@@ -196,7 +196,6 @@ def save_timeouts():
             if data['expiry'] > datetime.datetime.now().timestamp():
                 f.write(f"{uid},{data['expiry']},{data['reason']}\n")
 
-# NEW: Save function for T&C Agreement
 def save_agreed_user(uid):
     if uid not in AGREED_USERS:
         AGREED_USERS.add(uid)
@@ -221,6 +220,7 @@ async def is_user_restricted(user_id, update: Update):
         else:
             del USER_TIMEOUTS[user_id]
             save_timeouts()
+            
     return False
 
 def format_time(hour_24):
@@ -244,13 +244,15 @@ def get_seconds_until_active():
 def save_user(uid):
     if uid not in KNOWN_USERS:
         KNOWN_USERS.add(uid)
-        with open("users.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
+        with open("users.txt", "a", encoding="utf-8") as f:
+            f.write(f"{uid}\n")
 
 def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        if re.search(r'\b' + re.escape(word) + r'\b', text_lower): return True
+        pattern = r'\b' + re.escape(word) + r'\b'
+        if re.search(pattern, text_lower): return True
     return False
 
 def contains_link(message) -> bool:
@@ -309,24 +311,26 @@ async def post_photo(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Auto Reply for Groups/Channel DMs ---
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intercepts messages in supergroups (Channel DMs) and replies securely."""
+    """Intercepts messages in Channel DMs and explicitly targets the topic ID."""
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
     
-    # Don't auto-reply to the owner
     if str(msg.from_user.id) == str(OWNER_ID): return
     
     raw_msg = msg.to_dict()
     is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
     
     if is_channel_dm:
+        # Extract the hidden topic ID that Telegram uses for Channel DMs
+        topic_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
         try:
-            await msg.reply_text(
-                AUTO_REPLY_TEXT,
-                reply_to_message_id=msg.message_id
+            await context.bot.send_message(
+                chat_id=msg.chat_id,
+                text=AUTO_REPLY_TEXT,
+                message_thread_id=topic_id
             )
-            print("✅ Auto-reply sent to Channel DM!")
+            print(f"✅ Auto-reply sent to Channel DM! (Topic ID: {topic_id})")
         except Exception as e:
             print(f"❌ Failed to auto-reply to Channel DM: {e}")
 
@@ -353,14 +357,14 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             return
         if not is_privileged:
             now = datetime.datetime.now()
-            last_photo = user_photo_cooldowns.get(user.id)
+            last_photo = user_photo_cooldowns.get(user_id)
             if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
                 rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
                 hours_left = int(rem / 3600)
                 minutes_left = int((rem % 3600) / 60)
                 await update.message.reply_text(f"⏳ Photos limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
                 return
-            user_photo_cooldowns[user.id] = now
+            user_photo_cooldowns[user_id] = now
 
     text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     if check_for_banned_words(text_to_check) and not is_privileged:
@@ -373,14 +377,14 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             return
         if not is_privileged:
             now = datetime.datetime.now()
-            last_link = user_link_cooldowns.get(user.id)
+            last_link = user_link_cooldowns.get(user_id)
             if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
                 rem = LINK_COOLDOWN - (now - last_link).total_seconds()
                 hours_left = int(rem / 3600)
                 minutes_left = int((rem % 3600) / 60)
                 await update.message.reply_text(f"⏳ Links limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
                 return
-            user_link_cooldowns[user.id] = now
+            user_link_cooldowns[user_id] = now
 
     base_delay = 0
     if not is_bot_active() and not is_privileged:
@@ -391,11 +395,11 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     if is_privileged:
         final_delay = 0 
     else:
-        current_queue_time = user_queues.get(user.id, now_tz)
+        current_queue_time = user_queues.get(user_id, now_tz)
         if current_queue_time < now_tz: current_queue_time = now_tz
         final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
     
-    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username}
+    job_context = {'chat_id': CHANNEL_ID, 'user_id': user_id, 'user_name': user.first_name, 'username': user.username}
     
     if post_type == 'text':
         job_context['text'] = text_to_check
@@ -406,7 +410,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         context.job_queue.run_once(post_photo, final_delay, data=job_context)
 
     if not is_privileged:
-        user_queues[user.id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
+        user_queues[user_id] = now_tz + datetime.timedelta(seconds=final_delay + POST_DELAY)
     
     if base_delay == 0:
         if final_delay < 1: await update.message.reply_text("✅ Confession sent anonymously!")
@@ -479,16 +483,16 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # ----------------------------
 
-    if await is_user_restricted(user.id, update): return
+    if await is_user_restricted(user_id, update): return
     if not update.message.forward_from_chat: return
 
     target_chat = str(update.message.forward_from_chat.id)
     if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
-        is_privileged = is_owner_or_mod(user.id)
+        is_privileged = is_owner_or_mod(user_id)
         now = datetime.datetime.now()
         
         if not is_privileged:
-            last_del = user_delete_cooldowns.get(user.id)
+            last_del = user_delete_cooldowns.get(user_id)
             if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
                 await update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
                 return
@@ -497,25 +501,30 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg_id = update.message.forward_from_message_id
             await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
             
-            if not is_privileged: user_delete_cooldowns[user.id] = now
+            if not is_privileged: user_delete_cooldowns[user_id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
             content = update.message.text or update.message.caption or "[Media with no caption]"
             raw_username = user.username
             display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
             safe_user = html.escape(str(user.first_name))
-            safe_uid = html.escape(str(user.id))
+            safe_uid = html.escape(str(user_id))
             safe_content = html.escape(content)
             
             owner_log_txt = (
-                f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n"
-                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
+                f"🗑 <b>DELETION LOG</b>\n"
+                f"<b>By:</b> {safe_user} (<code>{safe_uid}</code>)\n"
+                f"<b>Username:</b> {display_username}\n"
+                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
+                f"<b>Original Content:</b>\n{safe_content}"
             )
             await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='HTML')
 
             mod_log_txt = (
-                f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n"
-                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
+                f"🗑 <b>DELETION LOG (Moderator View)</b>\n"
+                f"<b>By User ID:</b> <code>{safe_uid}</code>\n"
+                f"<b>Msg ID:</b> <code>{msg_id}</code>\n"
+                f"<b>Original Content:</b>\n{safe_content}"
             )
             await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='HTML')
             
@@ -724,7 +733,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in action_states: del action_states[user_id]
     
     role_title, reply_markup = get_main_menu(user_id)
-    greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else ""
+    greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
     await update.message.reply_text(
         f"{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:",
         reply_markup=reply_markup
@@ -740,7 +749,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if query.data == 'tc_agree':
         save_agreed_user(user_id)
         role_title, reply_markup = get_main_menu(user_id)
-        greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else ""
+        greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
         await query.edit_message_text(
             f"✅ Thank you for agreeing to the Terms and Conditions!\n\n{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:",
             reply_markup=reply_markup
@@ -750,7 +759,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     if query.data == 'menu_back':
         if user_id in action_states: del action_states[user_id]
         role_title, reply_markup = get_main_menu(user_id)
-        greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else ""
+        greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
         await query.edit_message_text(f"{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:", reply_markup=reply_markup)
 
     elif query.data == 'menu_guide':
