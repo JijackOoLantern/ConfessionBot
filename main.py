@@ -311,36 +311,28 @@ async def post_photo(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Auto Reply for Groups/Channel DMs ---
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Intercepts messages in Channel DMs and explicitly targets the topic ID."""
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
     
-    # --- I HAVE COMMENTED THIS OUT SO YOU CAN TEST IT AS THE OWNER! ---
-    # Once you test it and it works, you can remove the '#' below to turn it back on.
-    # if str(msg.from_user.id) == str(OWNER_ID): return
-    # ------------------------------------------------------------------
+    # Do not auto-reply to the owner
+    if str(msg.from_user.id) == str(OWNER_ID): return
     
-    print(f"\n--- 📥 INCOMING GROUP MESSAGE ---")
-    print(f"Chat ID: {msg.chat.id}")
-
-    # Extract thread/topic ID explicitly
-    thread_id = msg.message_thread_id
-    if not thread_id:
-        raw_msg = msg.to_dict()
-        thread_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
-        
-    print(f"Target Thread ID: {thread_id}")
-
-    try:
-        await context.bot.send_message(
-            chat_id=msg.chat.id,
-            text=AUTO_REPLY_TEXT,
-            reply_to_message_id=msg.message_id,
-            message_thread_id=thread_id
-        )
-        print("✅ Auto-reply sent successfully!")
-    except Exception as e:
-        print(f"❌ Failed to auto-reply: {e}")
+    raw_msg = msg.to_dict()
+    is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
+    
+    if is_channel_dm:
+        topic_id = raw_msg.get('direct_messages_topic', {}).get('topic_id')
+        try:
+            await context.bot.send_message(
+                chat_id=msg.chat_id,
+                text=AUTO_REPLY_TEXT,
+                message_thread_id=topic_id
+            )
+            print(f"✅ Auto-reply sent to Channel DM! (Topic ID: {topic_id})")
+        except Exception as e:
+            print(f"❌ Failed to auto-reply to Channel DM: {e}")
 
 # --- Handlers ---
 async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_type: str):
@@ -424,6 +416,14 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         if final_delay < 1: await update.message.reply_text("✅ Confession sent anonymously!")
         else: await update.message.reply_text(f"🕒 Queued. Will be posted in {int(final_delay)} seconds.")
 
+    # --- RESTORED: AUTO REPLY FOR 1-ON-1 PRIVATE DMs ---
+    if AUTO_REPLY_ENABLED and not is_privileged:
+        try:
+            await update.message.reply_text(AUTO_REPLY_TEXT)
+            print("✅ Auto-reply sent to Private DM!")
+        except Exception as e:
+            print(f"❌ Auto-reply error in Private DM: {e}")
+
 async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     await _schedule_post(update, context, 'text')
     
@@ -500,7 +500,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.datetime.now()
         
         if not is_privileged:
-            last_del = user_delete_cooldowns.get(user.id)
+            last_del = user_delete_cooldowns.get(user_id)
             if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
                 await update.message.reply_text(f"⏳ Please wait {int(DELETE_COOLDOWN - (now - last_del).total_seconds())}s before deleting again.")
                 return
