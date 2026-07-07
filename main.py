@@ -367,6 +367,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
 @TapahConfessions
 - Posts are anonymous.
 - To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
+ - Failure to do so will result in timeout.
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
@@ -805,6 +806,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 @TapahConfessions
 - Posts are anonymous.
 - To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
+ - Failure to do so will result in timeout.
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
