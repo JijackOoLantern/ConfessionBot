@@ -251,18 +251,17 @@ def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        # If the banned word contains only letters/numbers, use strict word boundaries
         if re.match(r'^\w+$', word):
-            pattern = r'\b' + re.escape(word) + r'\b'
+            pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
             if re.search(pattern, text_lower): return True
         else:
-            # If the banned word has special characters (like a URL), do a direct literal match
             if word in text_lower: return True
     return False
 
 def contains_link(message) -> bool:
-    entities = (message.entities or []) + (message.caption_entities or [])
-    return any(e.type in ('url', 'text_link') for e in entities)
+    """Strictly checks for URLs, entirely ignoring Telegram's auto-formatting of @ and phone numbers."""
+    text = (message.text or message.caption or "").lower()
+    return "http://" in text or "https://" in text or "www." in text
 
 def create_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     raw_username = job_info.get('username')
