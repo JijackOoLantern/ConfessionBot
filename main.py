@@ -251,7 +251,8 @@ def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        pattern = r'\b' + re.escape(word) + r'\b'
+        # Negative lookbehinds/lookaheads flawlessly support special characters like @
+        pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
         if re.search(pattern, text_lower): return True
     return False
 
@@ -288,7 +289,10 @@ def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_con
     return log_message
 
 def get_tnc_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Read Guide", callback_data='tc_guide')],
+        [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]
+    ])
 
 # --- Job Queue Functions ---
 async def post_text(context: ContextTypes.DEFAULT_TYPE):
@@ -311,7 +315,6 @@ async def post_photo(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Auto Reply for Groups/Channel DMs ---
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Intercepts messages in Channel DMs and uses native reply."""
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
@@ -324,9 +327,7 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if is_channel_dm:
         try:
-            # Native reply_text magically handles the hidden topic IDs perfectly
             await msg.reply_text(AUTO_REPLY_TEXT)
-            print("✅ Auto-reply sent to Channel DM!")
         except Exception as e:
             print(f"❌ Failed to auto-reply to Channel DM: {e}")
 
@@ -347,6 +348,46 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     is_privileged = is_owner_or_mod(user_id)
     if await is_user_restricted(user_id, update): return
 
+    # --- DELETE ISOLATION TIMEOUT ---
+    text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
+    text_stripped = text_to_check.strip()
+    
+    if post_type == 'text' and text_stripped.lower() == 'delete':
+        if not is_privileged:
+            expiry_time = datetime.datetime.now() + datetime.timedelta(minutes=1)
+            USER_TIMEOUTS[user_id] = {'expiry': expiry_time.timestamp(), 'reason': "Invalid deletion attempt. Do not type 'delete'."}
+            save_timeouts()
+            
+            status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
+            status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
+            active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
+            
+            guide_txt = f"""
+<b>Confession Bot Guide</b>
+@TapahConfessions
+- Posts are anonymous.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
+- Post Cooldown: {POST_DELAY}s between posts.
+- Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
+- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
+- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
+- No banned words allowed.
+
+<b>Active Hours:</b>
+- {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
+- Current Status: {active_status}
+
+<b>Permissions:</b>
+- Links: {status_links}
+- Photos: {status_photos}
+"""
+            await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{guide_txt}", parse_mode='HTML')
+            return
+        else:
+            await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
+            return
+    # --------------------------------
+
     if post_type == 'photo':
         if not PHOTOS_ENABLED and not is_privileged:
             await update.message.reply_text("❌ Photo confessions are currently disabled.")
@@ -362,7 +403,6 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
                 return
             user_photo_cooldowns[user_id] = now
 
-    text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     if check_for_banned_words(text_to_check) and not is_privileged:
         await update.message.reply_text("❌ Your message contains words that are not allowed.")
         return
@@ -416,7 +456,6 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     if AUTO_REPLY_ENABLED and not is_privileged:
         try:
             await update.message.reply_text(AUTO_REPLY_TEXT)
-            print("✅ Auto-reply sent to Private DM!")
         except Exception as e:
             print(f"❌ Auto-reply error in Private DM: {e}")
 
@@ -744,7 +783,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer() 
     user_id = query.from_user.id
 
-    # --- T&C Agreemment Handler ---
+    # --- T&C Agreement Handler ---
     if query.data == 'tc_agree':
         save_agreed_user(user_id)
         role_title, reply_markup = get_main_menu(user_id)
@@ -753,6 +792,40 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"✅ Thank you for agreeing to the Terms and Conditions!\n\n{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:",
             reply_markup=reply_markup
         )
+        return
+
+    # --- Guide preview before T&C Acceptance ---
+    elif query.data == 'tc_guide':
+        status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
+        status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
+        active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
+        
+        txt = f"""
+<b>Confession Bot Guide</b>
+@TapahConfessions
+- Posts are anonymous.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
+- Post Cooldown: {POST_DELAY}s between posts.
+- Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
+- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
+- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
+- No banned words allowed.
+
+<b>Active Hours:</b>
+- {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
+- Current Status: {active_status}
+
+<b>Permissions:</b>
+- Links: {status_links}
+- Photos: {status_photos}
+        """
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back to T&C", callback_data='tc_back')]])
+        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
+        return
+
+    # --- Return back to T&C from Guide ---
+    elif query.data == 'tc_back':
+        await query.edit_message_text(text=TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
 
     if query.data == 'menu_back':
@@ -770,7 +843,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 <b>Confession Bot Guide</b>
 @TapahConfessions
 - Posts are anonymous.
-- To delete your post: Forward it from the channel back to this bot.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
+ - Failure to do so will result in timeout.
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
