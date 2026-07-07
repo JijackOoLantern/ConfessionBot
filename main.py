@@ -251,9 +251,13 @@ def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        # Negative lookbehinds/lookaheads flawlessly support special characters like @
-        pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
-        if re.search(pattern, text_lower): return True
+        # If the banned word contains only letters/numbers, use strict word boundaries
+        if re.match(r'^\w+$', word):
+            pattern = r'\b' + re.escape(word) + r'\b'
+            if re.search(pattern, text_lower): return True
+        else:
+            # If the banned word has special characters (like a URL), do a direct literal match
+            if word in text_lower: return True
     return False
 
 def contains_link(message) -> bool:
@@ -319,7 +323,6 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.from_user: return
     
-    # Do not auto-reply to the owner
     if str(msg.from_user.id) == str(OWNER_ID): return
     
     raw_msg = msg.to_dict()
@@ -366,8 +369,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
 <b>Confession Bot Guide</b>
 @TapahConfessions
 - Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
- - Failure to do so will result in timeout.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
@@ -805,8 +807,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 <b>Confession Bot Guide</b>
 @TapahConfessions
 - Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
- - Failure to do so will result in timeout.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
@@ -845,8 +846,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 <b>Confession Bot Guide</b>
 @TapahConfessions
 - Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'.</b>
- - Failure to do so will result in timeout.
+- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
 - Post Cooldown: {POST_DELAY}s between posts.
 - Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
 - Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
