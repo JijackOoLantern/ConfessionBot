@@ -251,10 +251,12 @@ def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
+        # If the banned word contains only letters/numbers, use strict word boundaries
         if re.match(r'^\w+$', word):
             pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
             if re.search(pattern, text_lower): return True
         else:
+            # If the banned word has special characters (like a URL), do a direct literal match
             if word in text_lower: return True
     return False
 
@@ -454,13 +456,6 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         if final_delay < 1: await update.message.reply_text("✅ Confession sent anonymously!")
         else: await update.message.reply_text(f"🕒 Queued. Will be posted in {int(final_delay)} seconds.")
 
-    # --- RESTORED: AUTO REPLY FOR 1-ON-1 PRIVATE DMs ---
-    if AUTO_REPLY_ENABLED and not is_privileged:
-        try:
-            await update.message.reply_text(AUTO_REPLY_TEXT)
-        except Exception as e:
-            print(f"❌ Auto-reply error in Private DM: {e}")
-
 async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     await _schedule_post(update, context, 'text')
     
@@ -528,10 +523,23 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # ----------------------------
 
-    if await is_user_restricted(user.id, update): return
-    if not update.message.forward_from_chat: return
+    if await is_user_restricted(user_id, update): return
+    
+    target_chat = None
+    msg_id = None
+    
+    # V20+ Compatibility logic for extracted forwarded message
+    if hasattr(update.message, 'forward_origin') and update.message.forward_origin:
+        origin = update.message.forward_origin
+        if getattr(origin, 'type', '') == 'channel':
+            target_chat = str(origin.chat.id)
+            msg_id = getattr(origin, 'message_id', None)
+    elif update.message.forward_from_chat:
+        target_chat = str(update.message.forward_from_chat.id)
+        msg_id = update.message.forward_from_message_id
+        
+    if not target_chat or not msg_id: return
 
-    target_chat = str(update.message.forward_from_chat.id)
     if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
         is_privileged = is_owner_or_mod(user_id)
         now = datetime.datetime.now()
@@ -543,7 +551,6 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         try:
-            msg_id = update.message.forward_from_message_id
             await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
             
             if not is_privileged: user_delete_cooldowns[user_id] = now
