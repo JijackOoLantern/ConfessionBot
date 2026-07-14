@@ -6,7 +6,7 @@ import re
 import asyncio
 import logging
 import html
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import (
     ApplicationBuilder,
     MessageHandler,
@@ -14,6 +14,7 @@ from telegram.ext import (
     CommandHandler,
     ConversationHandler,
     CallbackQueryHandler,
+    PreCheckoutQueryHandler,
     ContextTypes,
     Application
 )
@@ -35,7 +36,7 @@ try:
 except ImportError:
     pass
 
-# --- Bot's Memory and Settings ---
+# --- Bot's Memory and Settings (LEGACY BASELINE FOR NORMAL USERS) ---
 POST_DELAY = 15  
 DELETE_COOLDOWN = 60  
 LINK_COOLDOWN = 14400 
@@ -53,14 +54,105 @@ PHOTOS_ENABLED = True
 AUTO_REPLY_ENABLED = True
 AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
 
-# --- Terms and Conditions Text ---
+# --- Dynamic Tier Matrix & PRICING ---
+TIER_CONFIG = {
+    'basic': {
+        'name': 'Basic (F.O.C)',
+        'link_cooldown': 43200,   
+        'photo_cooldown': 43200,  
+        'post_cooldown': 30,      
+        'delete_cooldown': 1800,  
+        'delete_access': 'own',
+        'price': 0,
+        'duration_days': 0
+    },
+    'tier1': {
+        'name': 'Tier 1 Premium',
+        'link_cooldown': 14400,   
+        'photo_cooldown': 14400,  
+        'post_cooldown': 15,      
+        'delete_cooldown': 30,    
+        'delete_access': 'all',
+        'price': 100,               # TEST PRICE: 1 Star
+        'duration_days': 14       
+    },
+    'tier2': {
+        'name': 'Tier 2 Premium',
+        'link_cooldown': 14400,   
+        'photo_cooldown': 21600,  
+        'post_cooldown': 15,      
+        'delete_cooldown': 60,    
+        'delete_access': 'all',
+        'price': 50,               # TEST PRICE: 1 Star
+        'duration_days': 14       
+    },
+    'club': {
+        'name': 'Club/Association Sub',
+        'link_cooldown': 3600,    
+        'photo_cooldown': 3600,   
+        'post_cooldown': 15,      
+        'delete_cooldown': 0,     
+        'delete_access': 'own',
+        'price': 200,               # TEST PRICE: 1 Star
+        'duration_days': 30       
+    }
+}
+
+PERK_CONFIG = {
+    'immunity': {
+        'name': 'Immunity Perk',
+        'desc': 'Post cannot be deleted by others',
+        'price': 1,               # TEST PRICE: 1 Star
+        'duration_hours': 12      
+    },
+    'spotlight': {
+        'name': 'Spotlight Perk',
+        'desc': 'Instantly skips the post queue',
+        'price': 100,               # TEST PRICE: 1 Star
+        'duration_hours': 12      
+    }
+}
+
+# --- Exact Guide & Conditions Text ---
+GUIDE_TEXT = (
+    "<b>UiTM Tapah Confession Bot Guide and Conditions.</b>\n\n"
+    "<u>User</u>\n"
+    "- Any user of the bot will get Basic Level of Subscription. To get advanced level access, read subscription.\n\n"
+    "<u>Posts</u>\n"
+    "- Posts are anonymous.\n"
+    "- All posts will be queued in master line with 30 seconds delay between every posts. Meaning many user = long queue. This is to reduce spamming an collectively be mindful of our interaction.\n\n"
+    "For example. User A need to wait for 30 seconds before it's confession being posted. User B who posts immediately after User A, will need to wait for 60 seconds before it's confession being posted. User A queue 30 seconds + own queue 30 seconds.\n\n"
+    "<u>Deletion</u>\n"
+    "- To delete a post, forward the message to the bot.\n"
+    "- A timeout will be imposed for any users who send \"delete\" (not case sensitive)\n\n"
+    "<u>Cooldown</u>\n"
+    "- Cooldown on certain type of messages is imposed to reduce spamming.\n\n"
+    "<u>Timeout</u>\n"
+    "- Timed punishment for user imposed by Dev/Mod, with the reason of posting unpleasant posts.\n\n"
+    "<u>Subscription/Perks</u>\n"
+    "- Optional add-on to improve bot user interaction.\n"
+    "- Subscription Based.\n"
+    "- No refund will be issued.\n\n"
+    "<u>Subscription for Clubs</u>\n"
+    "- Only 2 accounts allowed for any clubs & association\n"
+    "- Strictly only for clubs related posts\n"
+    "- Any post made in the interest of personal related will risk the access to subscription revoked and will not be refunded.\n\n"
+    "<u>Developer/Moderator (Dev/Mod)</u>\n"
+    "- Developer is the one who develop the bot and the channel.\n"
+    "- Moderator is the one who manages the channel with their own willingness.\n"
+    "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n\n"
+    "<u>Mature Content</u>\n"
+    "- Any posts showing clear signs of mature content that risks the banning of the channel, will be deleted and the sender of the post will be banned and no appeal will be heard.\n\n"
+    "<u>Banned Words/User</u>\n"
+    "- Any words that is banned will not be posted. The list is updated periodically.\n"
+    "- Banned user is allowed to appeal with the judgement of Dev.\n"
+    "- User that is banned with the request of Mod is not allowed to appeal."
+)
+
 TNC_TEXT = (
-    "👋 Hello!\n"
-    "Welcome to Tapah Confession Bot.\n\n"
-    "Send any text or photos to post your confession anonymously to the channel.\n\n"
-    "To delete a confession, kindly forward the post to bot.\n\n"
-    "Do read our guide for terms and conditions.\n\n"
-    "By clicking below button. You agree to the terms and conditions."
+    "👋 Welcome to Tapah Confession Bot!\n\n"
+    "By tapping below, you acknowledge and agree to fully abide by the terms, structural rules, "
+    "and timeout regulations outlined in our operational guide."
 )
 
 user_queues: Dict[int, datetime.datetime] = {}
@@ -80,19 +172,12 @@ try:
     MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') 
 
     if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID]):
-        missing = [k for k, v in {
-            'BOT_TOKEN': TOKEN, 'CHANNEL_ID': CHANNEL_ID, 'OWNER_ID': OWNER_ID_STR, 
-            'LOG_CHANNEL_ID': LOG_CHANNEL_ID, 'MOD_LOG_CHANNEL_ID': MOD_LOG_CHANNEL_ID
-        }.items() if not v]
-        print(f"❌ CRITICAL ERROR: Missing .env variables: {', '.join(missing)}")
         sys.exit(1)
-    
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
-    print("❌ CRITICAL ERROR: OWNER_ID must be a number in your .env file.")
     sys.exit(1)
 
-# --- Persistence Loading ---
+# --- Storage Core Adapters ---
 def load_ids(filename):
     ids = set()
     try:
@@ -101,8 +186,8 @@ def load_ids(filename):
                 ids = {int(line.strip()) for line in f if line.strip().isdigit()}
         else:
             open(filename, "a", encoding="utf-8").close()
-    except Exception as e:
-        print(f"Warning: Could not load {filename}: {e}")
+    except Exception:
+        pass
     return ids
 
 KNOWN_USERS = load_ids("users.txt")
@@ -146,6 +231,50 @@ def save_autoreply_settings():
 
 load_autoreply_settings()
 
+# --- Dynamic Status Engine (Subscriptions & Perks Tracker) ---
+def get_user_tier(uid: int) -> str:
+    if uid == OWNER_ID: return 'tier1' 
+    try:
+        if os.path.exists("active_subscriptions.txt"):
+            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        user_str, tier, expiry_str = line.strip().split(',')
+                        if int(user_str) == uid:
+                            if float(expiry_str) > time.time(): return tier
+    except: pass
+    return 'basic'
+
+def get_active_perks(uid: int) -> Set[str]:
+    active_perks = set()
+    try:
+        if os.path.exists("active_perks.txt"):
+            with open("active_perks.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        user_str, perk_type, expiry_str = line.strip().split(',')
+                        if int(user_str) == uid:
+                            if float(expiry_str) > time.time(): active_perks.add(perk_type)
+    except: pass
+    return active_perks
+
+# --- Database Relational Helpers ---
+def append_post_history(message_id: int, user_id: int, is_immune: bool):
+    with open("post_history.txt", "a", encoding="utf-8") as f:
+        f.write(f"{message_id},{user_id},{1 if is_immune else 0}\n")
+
+def query_post_history(message_id: int) -> Dict[str, Any]:
+    try:
+        if os.path.exists("post_history.txt"):
+            with open("post_history.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        msg_id, uid, immune_flag = line.strip().split(',')
+                        if int(msg_id) == message_id:
+                            return {'user_id': int(uid), 'is_immune': int(immune_flag) == 1}
+    except: pass
+    return {'user_id': None, 'is_immune': False}
+
 BANNED_USERS: Dict[int, str] = {}
 try:
     if os.path.exists("banned_users.txt"):
@@ -157,8 +286,6 @@ try:
                 uid = int(parts[0])
                 reason = parts[1] if len(parts) > 1 else "No reason provided."
                 BANNED_USERS[uid] = reason
-    else:
-        open("banned_users.txt", "a", encoding="utf-8").close()
 except Exception:
     pass
 
@@ -171,7 +298,7 @@ try:
                 uid = int(parts[0])
                 timestamp = float(parts[1])
                 reason = parts[2] if len(parts) > 2 else "No reason provided."
-                if float(timestamp) > datetime.datetime.now().timestamp():
+                if float(timestamp) > time.time():
                     USER_TIMEOUTS[int(uid)] = {'expiry': timestamp, 'reason': reason}
 except FileNotFoundError:
     open("timeouts.txt", "a", encoding="utf-8").close()
@@ -181,8 +308,6 @@ try:
     if os.path.exists("banned_words.txt"):
         with open("banned_words.txt", "r", encoding="utf-8") as f:
             BANNED_WORDS = {line.strip().lower() for line in f if line.strip()}
-    else:
-        open("banned_words.txt", "a", encoding="utf-8").close()
 except Exception:
     pass
 
@@ -193,7 +318,7 @@ def is_owner(uid): return uid == OWNER_ID
 def save_timeouts():
     with open("timeouts.txt", "w", encoding="utf-8") as f:
         for uid, data in USER_TIMEOUTS.items():
-            if data['expiry'] > datetime.datetime.now().timestamp():
+            if data['expiry'] > time.time():
                 f.write(f"{uid},{data['expiry']},{data['reason']}\n")
 
 def save_agreed_user(uid):
@@ -212,7 +337,7 @@ async def is_user_restricted(user_id, update: Update):
     if user_id in USER_TIMEOUTS:
         expiry = USER_TIMEOUTS[user_id]['expiry']
         reason = USER_TIMEOUTS[user_id]['reason']
-        remaining = expiry - datetime.datetime.now().timestamp()
+        remaining = expiry - time.time()
         if remaining > 0:
             minutes_left = int(remaining / 60) + 1
             await update.message.reply_text(f"⏳ You are in timeout. You cannot use the bot for another {minutes_left} minutes.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
@@ -251,17 +376,14 @@ def check_for_banned_words(text: str) -> bool:
     if not text: return False
     text_lower = text.lower()
     for word in BANNED_WORDS:
-        # If the banned word contains only letters/numbers, use strict word boundaries
         if re.match(r'^\w+$', word):
             pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
             if re.search(pattern, text_lower): return True
         else:
-            # If the banned word has special characters (like a URL), do a direct literal match
             if word in text_lower: return True
     return False
 
 def contains_link(message) -> bool:
-    """Strictly checks for URLs, entirely ignoring Telegram's auto-formatting of @ and phone numbers."""
     text = (message.text or message.caption or "").lower()
     return "http://" in text or "https://" in text or "www." in text
 
@@ -299,11 +421,118 @@ def get_tnc_keyboard():
         [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]
     ])
 
+def get_main_menu(user_id):
+    keyboard = []
+    if is_owner(user_id):
+        role_title = "👑 Owner Panel"
+        keyboard = [
+            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time')],
+            [InlineKeyboardButton("🤖 Auto-Reply", callback_data='menu_autoreply'), InlineKeyboardButton("📜 T&C Stats", callback_data='menu_tnc_stats')],
+            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods')],
+            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
+            [InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links'), InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos')],
+            [InlineKeyboardButton("🛒 Subscription Store", callback_data='menu_store'), InlineKeyboardButton("👤 My Status", callback_data='menu_my_status')],
+            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear')],
+            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+        ]
+    elif user_id in MODERATORS:
+        role_title = "👮‍♂️ Moderator Panel"
+        keyboard = [
+            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
+            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
+            [InlineKeyboardButton("🛒 Subscription Store", callback_data='menu_store'), InlineKeyboardButton("👤 My Status", callback_data='menu_my_status')],
+            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear')],
+            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+        ]
+    else:
+        role_title = "User"
+        keyboard = [
+            [InlineKeyboardButton("🛒 Subscription Store", callback_data='menu_store')],
+            [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
+            [InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+        ]
+    return role_title, InlineKeyboardMarkup(keyboard)
+
+def get_store_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎫 Tier 1 Premium (100 ⭐️)", callback_data='store_tier1')],
+        [InlineKeyboardButton("🎫 Tier 2 Premium (50 ⭐️)", callback_data='store_tier2')],
+        [InlineKeyboardButton("🏢 Club/Association (200 ⭐️)", callback_data='store_club')],
+        [InlineKeyboardButton("⚡ Spotlight Perk (100 ⭐️)", callback_data='store_spotlight')],
+        [InlineKeyboardButton("🛡️ Immunity Perk (100 ⭐️)", callback_data='store_immunity')],
+        [InlineKeyboardButton("◀️ Back to Menu", callback_data='menu_back')]
+    ])
+
+# --- Real Telegram Stars Payment Functions ---
+async def handle_store_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    item_code = query.data.replace('store_', '')
+    
+    title = ""
+    description = ""
+    price_stars = 0
+    payload_data = f"purchase_{item_code}"
+    
+    if item_code in TIER_CONFIG:
+        title = TIER_CONFIG[item_code]['name']
+        description = f"Upgrades your account to {title} for {TIER_CONFIG[item_code]['duration_days']} days. Includes specialized cooldowns and deletion access."
+        price_stars = TIER_CONFIG[item_code]['price']
+    elif item_code in PERK_CONFIG:
+        title = PERK_CONFIG[item_code]['name']
+        description = f"{PERK_CONFIG[item_code]['desc']}. Active for {PERK_CONFIG[item_code]['duration_hours']} hours."
+        price_stars = PERK_CONFIG[item_code]['price']
+        
+    prices = [LabeledPrice(title, price_stars)]
+    
+    try:
+        await context.bot.send_invoice(
+            chat_id=query.message.chat_id,
+            title=title,
+            description=description,
+            payload=payload_data,
+            provider_token="", 
+            currency="XTR", 
+            prices=prices
+        )
+    except Exception as e:
+        await context.bot.send_message(chat_id=query.message.chat_id, text=f"❌ Invoice Generation Failed. Error: {e}")
+
+async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.pre_checkout_query
+    if query.invoice_payload.startswith("purchase_"):
+        await query.answer(ok=True)
+    else:
+        await query.answer(ok=False, error_message="Invalid purchase payload.")
+
+async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    payload = update.message.successful_payment.invoice_payload
+    item_code = payload.replace("purchase_", "")
+    
+    now = time.time()
+    
+    if item_code in TIER_CONFIG:
+        duration_seconds = TIER_CONFIG[item_code]['duration_days'] * 86400
+        expiry = now + duration_seconds
+        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
+            f.write(f"{user_id},{item_code},{expiry}\n")
+        await update.message.reply_text(f"🎉 <b>Payment Successful!</b>\nYour payment for <b>{TIER_CONFIG[item_code]['name']}</b> has been received and logged.", parse_mode='HTML')
+        
+    elif item_code in PERK_CONFIG:
+        duration_seconds = PERK_CONFIG[item_code]['duration_hours'] * 3600
+        expiry = now + duration_seconds
+        with open("active_perks.txt", "a", encoding="utf-8") as f:
+            f.write(f"{user_id},{item_code},{expiry}\n")
+        await update.message.reply_text(f"⚡ <b>Payment Successful!</b>\nYour payment for <b>{PERK_CONFIG[item_code]['name']}</b> has been received and logged.", parse_mode='HTML')
+
 # --- Job Queue Functions ---
 async def post_text(context: ContextTypes.DEFAULT_TYPE):
     job_info = context.job.data
     try:
-        await context.bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
+        msg = await context.bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
+        append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
         await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
         await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
     except Exception as e: print(f"Post Error: {e}")
@@ -311,7 +540,8 @@ async def post_text(context: ContextTypes.DEFAULT_TYPE):
 async def post_photo(context: ContextTypes.DEFAULT_TYPE):
     job_info = context.job.data
     try:
-        await context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
+        msg = await context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
+        append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
         await context.bot.send_photo(chat_id=LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
         await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
         await context.bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
@@ -323,17 +553,12 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
-    
     if str(msg.from_user.id) == str(OWNER_ID): return
-    
     raw_msg = msg.to_dict()
     is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
-    
     if is_channel_dm:
-        try:
-            await msg.reply_text(AUTO_REPLY_TEXT)
-        except Exception as e:
-            print(f"❌ Failed to auto-reply to Channel DM: {e}")
+        try: await msg.reply_text(AUTO_REPLY_TEXT)
+        except Exception as e: print(f"❌ Failed to auto-reply to Channel DM: {e}")
 
 # --- Handlers ---
 async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_type: str):
@@ -343,55 +568,38 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
     user_id = user.id
     save_user(user_id)
     
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
-    # ----------------------------
 
     is_privileged = is_owner_or_mod(user_id)
     if await is_user_restricted(user_id, update): return
 
-    # --- DELETE ISOLATION TIMEOUT ---
     text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
     text_stripped = text_to_check.strip()
     
+    # --- DELETE ISOLATION TIMEOUT AND CHANNEL BROADCAST ---
     if post_type == 'text' and text_stripped.lower() == 'delete':
         if not is_privileged:
-            expiry_time = datetime.datetime.now() + datetime.timedelta(minutes=1)
-            USER_TIMEOUTS[user_id] = {'expiry': expiry_time.timestamp(), 'reason': "Invalid deletion attempt. Do not type 'delete'."}
+            expiry_time = time.time() + 60
+            USER_TIMEOUTS[user.id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt. Do not type 'delete'."}
             save_timeouts()
             
-            status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
-            status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
-            active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
+            await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
             
-            guide_txt = f"""
-<b>Confession Bot Guide</b>
-@TapahConfessions
-- Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
-- Post Cooldown: {POST_DELAY}s between posts.
-- Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
-- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
-- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
-- No banned words allowed.
-
-<b>Active Hours:</b>
-- {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
-- Current Status: {active_status}
-
-<b>Permissions:</b>
-- Links: {status_links}
-- Photos: {status_photos}
-"""
-            await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{guide_txt}", parse_mode='HTML')
+            str_id = str(user.id)
+            masked_id = str_id[:4] + "*" * (len(str_id) - 4)
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for 1m.\n<b>Reason:</b> Invalid deletion attempt.",
+                parse_mode='HTML'
+            )
             return
         else:
             await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
             return
-    # --------------------------------
 
+    # --- TEMPORARY TIER BYPASS: Force Normal User Baseline Constants ---
     if post_type == 'photo':
         if not PHOTOS_ENABLED and not is_privileged:
             await update.message.reply_text("❌ Photo confessions are currently disabled.")
@@ -401,9 +609,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             last_photo = user_photo_cooldowns.get(user_id)
             if last_photo and (now - last_photo).total_seconds() < PHOTO_COOLDOWN:
                 rem = PHOTO_COOLDOWN - (now - last_photo).total_seconds()
-                hours_left = int(rem / 3600)
-                minutes_left = int((rem % 3600) / 60)
-                await update.message.reply_text(f"⏳ Photos limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
+                await update.message.reply_text(f"⏳ Photos limited to once every {int(PHOTO_COOLDOWN/3600)}h. Wait {int(rem/3600)}h {int((rem%3600)/60)}m.")
                 return
             user_photo_cooldowns[user_id] = now
 
@@ -420,9 +626,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
             last_link = user_link_cooldowns.get(user_id)
             if last_link and (now - last_link).total_seconds() < LINK_COOLDOWN:
                 rem = LINK_COOLDOWN - (now - last_link).total_seconds()
-                hours_left = int(rem / 3600)
-                minutes_left = int((rem % 3600) / 60)
-                await update.message.reply_text(f"⏳ Links limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {hours_left}h {minutes_left}m.")
+                await update.message.reply_text(f"⏳ Links limited to once every {int(LINK_COOLDOWN/3600)}h. Wait {int(rem/3600)}h {int((rem%3600)/60)}m.")
                 return
             user_link_cooldowns[user_id] = now
 
@@ -439,7 +643,8 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         if current_queue_time < now_tz: current_queue_time = now_tz
         final_delay = (current_queue_time - now_tz).total_seconds() + base_delay
     
-    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username}
+    # Send immunity as False temporarily to bypass perk checks
+    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username, 'is_immune': False}
     
     if post_type == 'text':
         job_context['text'] = text_to_check
@@ -462,16 +667,13 @@ async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     await _schedule_post(update, context, 'photo')
 
-# --- Interactive Input Wrappers ---
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
     user_id = update.message.from_user.id
     
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
-    # ----------------------------
 
     if user_id in action_states:
         state = action_states[user_id]
@@ -500,11 +702,9 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.message or not update.message.from_user: return
     user_id = update.message.from_user.id
     
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
-    # ----------------------------
 
     if user_id in action_states:
         await update.message.reply_text("❌ Action cancelled. I was expecting text for the command.")
@@ -517,18 +717,15 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
     user_id = user.id
     
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
-    # ----------------------------
 
-    if await is_user_restricted(user_id, update): return
+    if await is_user_restricted(user.id, update): return
     
     target_chat = None
     msg_id = None
     
-    # V20+ Compatibility logic for extracted forwarded message
     if hasattr(update.message, 'forward_origin') and update.message.forward_origin:
         origin = update.message.forward_origin
         if getattr(origin, 'type', '') == 'channel':
@@ -544,6 +741,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_privileged = is_owner_or_mod(user_id)
         now = datetime.datetime.now()
         
+        # --- TEMPORARY TIER BYPASS: Remove ownership & immunity checks ---
         if not is_privileged:
             last_del = user_delete_cooldowns.get(user_id)
             if last_del and (now - last_del).total_seconds() < DELETE_COOLDOWN:
@@ -552,7 +750,6 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
-            
             if not is_privileged: user_delete_cooldowns[user_id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
@@ -578,6 +775,15 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e: await update.message.reply_text(f"❌ Could not delete: {e}")
 
 # --- Admin & Mod Commands ---
+async def my_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        f"👤 <b>Runtime Profile Audit</b>\n\n"
+        f"🎫 <b>Access Tier:</b> <code>Normal User</code>\n"
+        f"⚡ <b>Active Perks:</b> <code>None (System Paused)</code>\n\n"
+        f"<i>Note: The new subscription/perk system is currently in pre-launch mode. All users are treated as Normal Users with standard cooldowns.</i>", 
+        parse_mode='HTML'
+    )
+
 async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target = int(context.args[0])
@@ -662,6 +868,15 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         admin = update.message.from_user
         log_txt = f"⚠️ <b>MODERATOR ACTION: TIMEOUT</b>\n<b>Admin:</b> {html.escape(admin.first_name)} (<code>{admin.id}</code>)\n<b>Target:</b> <code>{target_id}</code>\n<b>Duration:</b> {minutes}m\n<b>Reason:</b> {html.escape(reason)}"
         await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_txt, parse_mode='HTML')
+        
+        # Announce timeout to channel with masked ID
+        str_id = str(target_id)
+        masked_id = str_id[:4] + "*" * (len(str_id) - 4)
+        await context.bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for {minutes}m.\n<b>Reason:</b> {html.escape(reason)}",
+            parse_mode='HTML'
+        )
     except: await update.message.reply_text("❌ Error. Incorrect format used.")
 
 async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -709,13 +924,9 @@ async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return AWAITING_HELP_MESSAGE
     user_id = update.message.from_user.id
-    
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return ConversationHandler.END
-    # ----------------------------
-
     if await is_user_restricted(user_id, update): return ConversationHandler.END
     await update.message.reply_text("Send your query. It will be forwarded to the owner.")
     return AWAITING_HELP_MESSAGE
@@ -735,45 +946,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
 
-# --- User & Menu Commands ---
-def get_main_menu(user_id):
-    keyboard = []
-    if is_owner(user_id):
-        role_title = "👑 Owner Panel"
-        keyboard = [
-            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time')],
-            [InlineKeyboardButton("🤖 Auto-Reply", callback_data='menu_autoreply'), InlineKeyboardButton("📜 T&C Stats", callback_data='menu_tnc_stats')],
-            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods')],
-            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
-            [InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links'), InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos')],
-            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear')],
-            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
-        ]
-    elif user_id in MODERATORS:
-        role_title = "👮‍♂️ Moderator Panel"
-        keyboard = [
-            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
-            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
-            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear')],
-            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
-        ]
-    else:
-        role_title = "User"
-        keyboard = [
-            [InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide'), InlineKeyboardButton("🤬 View Banned Words", callback_data='menu_view_words')],
-            [InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
-        ]
-    return role_title, InlineKeyboardMarkup(keyboard)
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
     user_id = update.message.from_user.id
     
-    # --- T&C Gatekeeper Check ---
     if user_id not in AGREED_USERS and not is_owner(user_id):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
-    # ----------------------------
 
     if await is_user_restricted(user_id, update): return
     save_user(user_id)
@@ -792,7 +971,6 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer() 
     user_id = query.from_user.id
 
-    # --- T&C Agreement Handler ---
     if query.data == 'tc_agree':
         save_agreed_user(user_id)
         role_title, reply_markup = get_main_menu(user_id)
@@ -803,36 +981,11 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    # --- Guide preview before T&C Acceptance ---
     elif query.data == 'tc_guide':
-        status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
-        status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
-        active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
-        
-        txt = f"""
-<b>Confession Bot Guide</b>
-@TapahConfessions
-- Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
-- Post Cooldown: {POST_DELAY}s between posts.
-- Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
-- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
-- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
-- No banned words allowed.
-
-<b>Active Hours:</b>
-- {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
-- Current Status: {active_status}
-
-<b>Permissions:</b>
-- Links: {status_links}
-- Photos: {status_photos}
-        """
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back to T&C", callback_data='tc_back')]])
-        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
+        await query.edit_message_text(text=GUIDE_TEXT, parse_mode='HTML', reply_markup=markup)
         return
 
-    # --- Return back to T&C from Guide ---
     elif query.data == 'tc_back':
         await query.edit_message_text(text=TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
@@ -844,31 +997,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(f"{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:", reply_markup=reply_markup)
 
     elif query.data == 'menu_guide':
-        status_links = "✅ Enabled" if LINKS_ENABLED else "❌ Disabled"
-        status_photos = "✅ Enabled" if PHOTOS_ENABLED else "❌ Disabled"
-        active_status = "✅ Active" if is_bot_active() else "🌙 Resting (Queueing enabled)"
-        
-        txt = f"""
-<b>Confession Bot Guide</b>
-@TapahConfessions
-- Posts are anonymous.
-- To delete your post: <b>Forward it from the channel back to this bot. Do NOT just type 'delete'. Failure to do so will result in timeout.</b>
-- Post Cooldown: {POST_DELAY}s between posts.
-- Delete Cooldown: {DELETE_COOLDOWN}s between deletions.
-- Link Cooldown: {int(LINK_COOLDOWN/3600)} hours between link posts.
-- Photo Cooldown: {int(PHOTO_COOLDOWN/3600)} hours between photo posts.
-- No banned words allowed.
-
-<b>Active Hours:</b>
-- {format_time(START_HOUR)} to {format_time(END_HOUR)} (GMT+8)
-- Current Status: {active_status}
-
-<b>Permissions:</b>
-- Links: {status_links}
-- Photos: {status_photos}
-        """
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
-        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
+        await query.edit_message_text(text=GUIDE_TEXT, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_clear':
         if user_id in user_queues:
@@ -879,6 +1009,20 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == 'menu_close':
         if user_id in action_states: del action_states[user_id]
         await query.edit_message_text(text="👋 Menu closed. Send a message or photo to confess.")
+        
+    elif query.data == 'menu_store':
+        txt = "🛒 <b>Subscription & Perks Store</b>\n\nUpgrade your account using Telegram Stars (⭐️) to unlock advanced cooldowns, deletion rights, and post queue skips. Select an option below:"
+        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=get_store_menu())
+        
+    elif query.data == 'menu_my_status':
+        txt = (
+            f"👤 <b>Runtime Profile Audit</b>\n\n"
+            f"🎫 <b>Access Tier:</b> <code>Normal User</code>\n"
+            f"⚡ <b>Active Perks:</b> <code>None (System Paused)</code>\n\n"
+            f"<i>Note: The new subscription/perk system is currently in pre-launch mode. All users are treated as Normal Users with standard cooldowns.</i>"
+        )
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
+        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_stats':
         if not is_owner(user_id): return
@@ -1019,6 +1163,9 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         }
         await query.edit_message_text(text=prompts.get(query.data, "Please provide input. Type /cancel to abort."), parse_mode='HTML')
 
+    elif query.data.startswith('store_'):
+        await handle_store_purchase(update, context)
+
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(context.error, NetworkError): return
     print(f"Update {update} caused error {context.error}")
@@ -1031,10 +1178,8 @@ async def post_init(application: Application):
         print(f"Warning: Failed to send startup notification: {e}")
 
 def main():
-    # --- PYTHON 3.14 EVENT LOOP FIX ---
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    # ----------------------------------
 
     application = (
         ApplicationBuilder()
@@ -1053,9 +1198,9 @@ def main():
         fallbacks=[CommandHandler('cancel', cancel)]
     ))
 
+    # --- Commands ---
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cancel", cancel)) 
-    application.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_|toggle_|tc_)'))
     application.add_handler(CommandHandler("settime", set_time))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("ban", ban_user))
@@ -1067,19 +1212,22 @@ def main():
     application.add_handler(CommandHandler("addban", add_banned_word))
     application.add_handler(CommandHandler("removeban", remove_banned_word))
     application.add_handler(CommandHandler("clearqueue", clear_queue))
+    application.add_handler(CommandHandler("my_status", my_status))
     
-    # --- THE ROUTING FIX ---
+    # --- Payment Handlers ---
+    application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+
+    # --- Interactive Buttons ---
+    application.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_|toggle_|tc_|store_)'))
+    
+    # --- Messages ---
     application.add_handler(MessageHandler(filters.FORWARDED, handle_delete))
-    
-    # Channel DMs / Groups go to the Auto-Reply
     application.add_handler(MessageHandler((filters.ChatType.SUPERGROUP | filters.ChatType.GROUPS) & ~filters.COMMAND, group_auto_reply))
-    
-    # 1-on-1 Private DMs go to the Confession Queue
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.PHOTO, handle_photo_input))
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, handle_text_input))
 
     print("--- Bot is Online and Operating ---")
-    
     application.run_polling()
 
 if __name__ == '__main__':
