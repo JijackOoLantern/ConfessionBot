@@ -45,7 +45,7 @@ PHOTOS_ENABLED = True
 AUTO_REPLY_ENABLED = True
 AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
 
-# --- LIVE Tier Matrix & PRICING ---
+# --- LIVE Tier Matrix & PRODUCTION PRICING ---
 TIER_CONFIG = {
     'basic': {
         'name': 'Normal User (Default)',
@@ -64,7 +64,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 30,    
         'delete_access': 'all',
-        'price': 100,               
+        'price': 100,             # Restored Production Price: 100 Stars 
         'duration_days': 14       
     },
     'tier2': {
@@ -74,7 +74,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 60,    
         'delete_access': 'all',
-        'price': 50,               
+        'price': 50,              # Restored Production Price: 50 Stars 
         'duration_days': 14       
     },
     'club': {
@@ -84,7 +84,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 0,     
         'delete_access': 'own',
-        'price': 200,               
+        'price': 200,             # Restored Production Price: 200 Stars 
         'duration_days': 30       
     }
 }
@@ -93,13 +93,13 @@ PERK_CONFIG = {
     'immunity': {
         'name': 'Immunity Perk',
         'desc': 'Post cannot be deleted by others',
-        'price': 100,               
+        'price': 100,             # Restored Production Price: 100 Stars
         'duration_hours': 12      
     },
     'spotlight': {
         'name': 'Spotlight Perk',
         'desc': 'Instantly skips the post queue',
-        'price': 100,               
+        'price': 100,             # Restored Production Price: 100 Stars
         'duration_hours': 12      
     }
 }
