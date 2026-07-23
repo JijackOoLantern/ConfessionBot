@@ -85,7 +85,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 30,    
         'delete_access': 'all',
-        'price': 100,           
+        'price': 100,             # Restored Production Price: 100 Stars
         'duration_days': 14   
     },
     'tier2': {
@@ -95,7 +95,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 60,    
         'delete_access': 'all',
-        'price': 50,           
+        'price': 50,              # Restored Production Price: 50 Stars
         'duration_days': 14   
     },
     'club': {
@@ -105,7 +105,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 0,     
         'delete_access': 'own',
-        'price': 200,           
+        'price': 200,             # Restored Production Price: 200 Stars
         'duration_days': 30   
     }
 }
@@ -114,16 +114,52 @@ PERK_CONFIG = {
     'spotlight': {
         'name': 'Spotlight Perk',
         'desc': 'Instantly skips the post queue',
-        'price': 100,           
+        'price': 100,             # Restored Production Price: 100 Stars
         'duration_hours': 12  
     },
     'immunity': {
         'name': 'Immunity Perk',
         'desc': 'Protects your post from being deleted by others',
-        'price': 100,           
+        'price': 100,             # Restored Production Price: 100 Stars
         'duration_hours': 12  
     }
 }
+
+GUIDE_TEXT = (
+    "<b>UiTM Tapah Confession Bot Guide and Conditions.</b>\n\n"
+    "<u>User</u>\n"
+    "- Any user of the bot will get Basic Level of Subscription. To get advanced level access, read subscription.\n\n"
+    "<u>Posts</u>\n"
+    "- Posts are anonymous.\n"
+    "- All posts will be queued according to their level of subscription. Meaning many user = long queue. This is to reduce spamming an collectively be mindful of our interaction.\n\n"
+    "For example Basic Level. User A need to wait for 30 seconds before it's confession being posted. User B who posts immediately after User A, will need to wait for 60 seconds before it's confession being posted. User A queue 30 seconds + own queue 30 seconds.\n\n"
+    "<u>Deletion</u>\n"
+    "- To delete a post, forward the message to the bot.\n"
+    "- A timeout will be imposed for any users who send \"delete\" (not case sensitive)\n\n"
+    "<u>Queue Time</u>\n"
+    "- Queue time is to replace cooldown.\n"
+    "- Queue time is bound by level of subscription.\n\n"
+    "<u>Timeout</u>\n"
+    "- Timed punishment for user imposed by Dev/Mod, with the reason of posting unpleasant posts.\n\n"
+    "<u>Subscription/Perks</u>\n"
+    "- Optional add-on to improve bot user interaction.\n"
+    "- Subscription Based.\n"
+    "- No refund will be issued.\n\n"
+    "<u>Subscription for Clubs</u>\n"
+    "- Only 2 accounts allowed for any clubs & association\n"
+    "- Strictly only for clubs related posts\n"
+    "- Any post made in the interest of personal related will risk the access to subscription revoked and will not be refunded.\n\n"
+    "<u>Developer/Moderator (Dev/Mod)</u>\n"
+    "- Developer is the one who develop the bot and the channel.\n"
+    "- Moderator is the one who manages the channel with their own willingness.\n"
+    "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n\n"
+    "<u>Mature Content</u>\n"
+    "- Any posts showing clear signs of mature content that risks the banning of the channel, will be deleted and the sender of the post will be banned and no appeal will be heard.\n\n"
+    "<u>Banned Words/User</u>\n"
+    "- Any words that is banned will not be posted. The list is updated periodically.\n"
+    "- Banned user is allowed to appeal with the judgement of Dev.\n"
+    "- User that is banned with the request of Mod is not allowed to appeal."
+)
 
 def get_user_tier(uid: int) -> str:
     if uid == OWNER_ID: return 'tier1'
@@ -155,7 +191,8 @@ def get_main_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Subscription Store", callback_data='nav_store')],
         [InlineKeyboardButton("👤 My Active Status", callback_data='nav_status')],
-        [InlineKeyboardButton("📖 Read Pricing & Perks Guide", callback_data='nav_guide')]
+        [InlineKeyboardButton("📖 Pricing & Perks Summary", callback_data='nav_summary')],
+        [InlineKeyboardButton("📋 Full Rules & Operational Guide", callback_data='nav_guide')]
     ])
 
 def get_store_keyboard():
@@ -257,9 +294,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='nav_main')]])
         await query.edit_message_text(status_txt, parse_mode='HTML', reply_markup=markup)
 
-    elif query.data == 'nav_guide':
+    elif query.data == 'nav_summary':
         guide_txt = (
-            "📖 <b>Subscription & Perks Guide</b>\n\n"
+            "📖 <b>Subscription & Perks Summary</b>\n\n"
             "<b>Normal User (Default)</b>\n- 30s personal queue duration\n- 4h photo & link limit\n- Delete own posts only\n\n"
             "<b>Tier 1 (100 ⭐️ / 14 Days)</b>\n- 15s personal queue duration\n- 4h photo & link limit\n- Delete own & others posts\n\n"
             "<b>Tier 2 (50 ⭐️ / 14 Days)</b>\n- 15s personal queue duration\n- 4h link / 6h photo limit\n- Delete own & others posts\n\n"
@@ -269,6 +306,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='nav_main')]])
         await query.edit_message_text(guide_txt, parse_mode='HTML', reply_markup=markup)
+
+    elif query.data == 'nav_guide':
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='nav_main')]])
+        await query.edit_message_text(GUIDE_TEXT, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'buy_club':
         action_states[uid] = 'awaiting_club_name'
