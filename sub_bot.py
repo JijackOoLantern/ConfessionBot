@@ -44,7 +44,6 @@ except Exception as e:
 
 action_states: Dict[int, str] = {}
 
-# --- Human-Readable Duration Formatter ---
 def format_duration(seconds: Union[int, float]) -> str:
     seconds = int(seconds)
     if seconds <= 0:
@@ -66,7 +65,6 @@ def format_duration(seconds: Union[int, float]) -> str:
         
     return " ".join(parts)
 
-# --- LIVE Pricing & Tier Configurations ---
 TIER_CONFIG = {
     'basic': {
         'name': 'Normal User (Default)',
@@ -85,7 +83,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 30,    
         'delete_access': 'all',
-        'price': 100,             # Restored Production Price: 100 Stars
+        'price': 100,             
         'duration_days': 14   
     },
     'tier2': {
@@ -95,7 +93,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 60,    
         'delete_access': 'all',
-        'price': 50,              # Restored Production Price: 50 Stars
+        'price': 50,              
         'duration_days': 14   
     },
     'club': {
@@ -105,7 +103,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 15,      
         'delete_cooldown': 0,     
         'delete_access': 'own',
-        'price': 200,             # Restored Production Price: 200 Stars
+        'price': 200,             
         'duration_days': 30   
     }
 }
@@ -114,13 +112,13 @@ PERK_CONFIG = {
     'spotlight': {
         'name': 'Spotlight Perk',
         'desc': 'Instantly skips the post queue',
-        'price': 100,             # Restored Production Price: 100 Stars
+        'price': 100,             
         'duration_hours': 12  
     },
     'immunity': {
         'name': 'Immunity Perk',
         'desc': 'Protects your post from being deleted by others',
-        'price': 100,             # Restored Production Price: 100 Stars
+        'price': 100,             
         'duration_hours': 12  
     }
 }
@@ -212,6 +210,46 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "All purchases are automatically synchronized with the Confession Bot instantly!"
     )
     await update.message.reply_text(welcome_txt, parse_mode='HTML', reply_markup=get_main_keyboard())
+
+async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command for owner to gift a level/tier to a desired user."""
+    if not update.message or update.message.from_user.id != OWNER_ID: return
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "❌ <b>Format:</b> <code>/gift &lt;user_id&gt; &lt;tier_code&gt; &lt;days&gt;</code>\n"
+            "<i>Valid Tiers:</i> <code>tier1</code>, <code>tier2</code>, <code>club</code>\n"
+            "<i>Example:</i> <code>/gift 123456789 tier1 14</code>",
+            parse_mode='HTML'
+        )
+        return
+    try:
+        target_uid = int(context.args[0])
+        tier_code = context.args[1].lower()
+        days = int(context.args[2])
+        
+        if tier_code not in TIER_CONFIG or tier_code == 'basic':
+            await update.message.reply_text("❌ Invalid tier code. Valid choices: <code>tier1</code>, <code>tier2</code>, <code>club</code>", parse_mode='HTML')
+            return
+            
+        now = time.time()
+        expiry = now + (days * 86400)
+        
+        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
+            f.write(f"{target_uid},{tier_code},{expiry}\n")
+            
+        tier_name = TIER_CONFIG[tier_code]['name']
+        await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_uid,
+                text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days. Enjoy your premium privileges!",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Gift logged, but user couldn't be notified directly: {e}")
+    except ValueError:
+        await update.message.reply_text("❌ User ID and Days must be valid numbers.")
 
 async def revoke_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command for owner/dev to revoke a user subscription with reasoning."""
@@ -386,7 +424,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Catches text input for Club Verification and Rejection Reasoning."""
     if not update.message or not update.message.from_user: return
     user = update.message.from_user
     uid = user.id
@@ -471,6 +508,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("revoke", revoke_command))
+    application.add_handler(CommandHandler("gift", gift_subscription))
     application.add_handler(CallbackQueryHandler(callback_handler, pattern='^(nav_|buy_|approve_club_|reject_club_)'))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
