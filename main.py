@@ -44,8 +44,9 @@ LINKS_ENABLED = True
 PHOTOS_ENABLED = True
 AUTO_REPLY_ENABLED = True
 AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
+AUTO_REPLY_PAUSE_DURATION = 86400  # 24 hours of silence after Owner replies
 
-# --- LIVE Tier Matrix & PRODUCTION PRICING ---
+# --- LIVE Tier Matrix & PRICING ---
 TIER_CONFIG = {
     'basic': {
         'name': 'Normal User (Default)',
@@ -104,6 +105,7 @@ PERK_CONFIG = {
     }
 }
 
+# --- Human-Readable Duration Formatter ---
 def format_duration(seconds: Union[int, float]) -> str:
     seconds = int(seconds)
     if seconds <= 0:
@@ -172,6 +174,7 @@ global_next_post_time = None
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
 user_link_cooldowns: Dict[int, datetime.datetime] = {}
 user_photo_cooldowns: Dict[int, datetime.datetime] = {} 
+auto_reply_pauses: Dict[int, float] = {}  # Tracks muted auto-replies
 
 AWAITING_HELP_MESSAGE = 0
 action_states: Dict[int, str] = {}
@@ -327,7 +330,6 @@ def save_agreed_user(uid):
 async def is_user_restricted(user_id, update: Update):
     if is_owner_or_mod(user_id): return False 
     
-    # Reload banned users directly from disk for 100% real-time accuracy
     banned_users = load_banned_users()
     if user_id in banned_users:
         await update.message.reply_text(f"🚫 You are permanently banned.\n<b>Reason:</b> {html.escape(banned_users[user_id])}", parse_mode='HTML')
@@ -472,12 +474,30 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not AUTO_REPLY_ENABLED: return
     msg = update.message
     if not msg or not msg.from_user: return
-    if str(msg.from_user.id) == str(OWNER_ID): return
+    
     raw_msg = msg.to_dict()
     is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
-    if is_channel_dm:
-        try: await msg.reply_text(AUTO_REPLY_TEXT)
-        except: pass
+    if not is_channel_dm: return
+
+    chat_id = msg.chat_id
+    now = time.time()
+
+    # If the sender is the OWNER, pause auto-replies in this DM thread for 24h
+    if str(msg.from_user.id) == str(OWNER_ID):
+        auto_reply_pauses[chat_id] = now + AUTO_REPLY_PAUSE_DURATION
+        return
+
+    # If user sends a message, check if the DM thread is currently silenced
+    if chat_id in auto_reply_pauses:
+        if now < auto_reply_pauses[chat_id]:
+            return  # Auto-reply is paused, stay silent
+        else:
+            del auto_reply_pauses[chat_id]  # Pause expired, remove it
+
+    # Send auto-reply
+    try: 
+        await msg.reply_text(AUTO_REPLY_TEXT)
+    except Exception as e: pass
 
 async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_type: str):
     global global_next_post_time
@@ -600,7 +620,6 @@ async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE): await _schedule_post(update, context, 'photo')
 
 async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command for owner to gift a level/tier to a desired user."""
     if not update.message or not is_owner(update.message.from_user.id): return
     if len(context.args) < 3:
         await update.message.reply_text(
@@ -640,7 +659,6 @@ async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User ID and Days must be valid numbers.")
 
 async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command for owner/dev to revoke a user subscription with reasoning."""
     if not update.message or not is_owner(update.message.from_user.id): return
     if len(context.args) < 2:
         await update.message.reply_text("❌ Format: <code>/revoke <user_id> <reason></code>", parse_mode='HTML')
@@ -797,8 +815,7 @@ async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         await update.message.reply_text(f"👮‍♂️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/addmod <user_id></code>", parse_mode='HTML')
+    except: pass
 
 async def remove_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -807,8 +824,7 @@ async def remove_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in MODERATORS: f.write(f"{m}\n")
         await update.message.reply_text(f"✅ User <code>{target}</code> is no longer a Moderator.", parse_mode='HTML')
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/removemod <user_id></code>", parse_mode='HTML')
+    except: pass
 
 async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -819,15 +835,12 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         START_HOUR, END_HOUR = start_h, end_h
         save_time_settings()
         await update.message.reply_text(f"✅ Active time updated!\nStart: {format_time(START_HOUR)}\nEnd/Sleep: {format_time(END_HOUR)}")
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/settime <start_hour_24> <end_hour_24></code>", parse_mode='HTML')
+    except: pass
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not is_owner(update.message.from_user.id): return
     msg_text = " ".join(context.args)
-    if not msg_text:
-        await update.message.reply_text("❌ Format: <code>/broadcast Your message here</code>", parse_mode='HTML')
-        return
+    if not msg_text: return
     await update.message.reply_text(f"📢 Broadcasting to {len(KNOWN_USERS)} users...")
     sent, failed = 0, 0
     for uid in list(KNOWN_USERS):
@@ -842,16 +855,12 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target = int(context.args[0])
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided."
-        
-        # Write directly to disk
         banned = load_banned_users()
         banned[target] = reason
         with open("banned_users.txt", "w", encoding="utf-8") as f:
             for u, r in banned.items(): f.write(f"{u},{r}\n")
-            
-        await update.message.reply_text(f"🚫 User <code>{target}</code> banned.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/ban <user_id> <reason></code>", parse_mode='HTML')
+        await update.message.reply_text(f"🚫 User `{target}` banned.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
+    except: pass
 
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -862,10 +871,7 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with open("banned_users.txt", "w", encoding="utf-8") as f:
                 for u, r in banned.items(): f.write(f"{u},{r}\n")
             await update.message.reply_text(f"✅ User <code>{target}</code> unbanned.", parse_mode='HTML')
-        else:
-            await update.message.reply_text(f"⚠️ User <code>{target}</code> is not in the ban list.", parse_mode='HTML')
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/unban <user_id></code>", parse_mode='HTML')
+    except: pass
 
 async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -884,8 +890,7 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for {minutes}m.\n<b>Reason:</b> {html.escape(reason)}",
             parse_mode='HTML'
         )
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/timeout <user_id> <minutes> <reason></code>", parse_mode='HTML')
+    except: pass
 
 async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -894,10 +899,7 @@ async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del USER_TIMEOUTS[target_id]
             save_timeouts()
             await update.message.reply_text(f"✅ Timeout removed for {target_id}.")
-        else:
-            await update.message.reply_text("⚠️ User is not currently timed out.")
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Format: <code>/untimeout <user_id></code>", parse_mode='HTML')
+    except: pass
 
 async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -907,8 +909,7 @@ async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open("banned_words.txt", "w", encoding="utf-8") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
         await update.message.reply_text(f"🚫 Banned word added: {word}")
-    except IndexError:
-        await update.message.reply_text("❌ Format: <code>/addban <word></code>", parse_mode='HTML')
+    except: pass
 
 async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -918,8 +919,7 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         with open("banned_words.txt", "w", encoding="utf-8") as f:
             for w in BANNED_WORDS: f.write(f"{w}\n")
         await update.message.reply_text(f"✅ Banned word removed: {word}")
-    except IndexError:
-        await update.message.reply_text("❌ Format: <code>/removeban <word></code>", parse_mode='HTML')
+    except: pass
 
 async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global global_next_post_time
