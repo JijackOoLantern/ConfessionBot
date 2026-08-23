@@ -15,9 +15,8 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
-from typing import Dict, Union
+from typing import Dict, Union, Set, Any
 
-# --- Live Terminal Logging ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -43,25 +42,22 @@ except Exception as e:
     sys.exit(1)
 
 action_states: Dict[int, str] = {}
+auto_reply_pauses: Dict[int, float] = {} 
+AUTO_REPLY_PAUSE_DURATION = 86400  
 
 def format_duration(seconds: Union[int, float]) -> str:
     seconds = int(seconds)
-    if seconds <= 0:
-        return "0 seconds"
-    if seconds < 60:
-        return f"{seconds} second" + ("s" if seconds != 1 else "")
+    if seconds <= 0: return "0 seconds"
+    if seconds < 60: return f"{seconds} second" + ("s" if seconds != 1 else "")
     
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     secs = seconds % 60
     
     parts = []
-    if hours > 0:
-        parts.append(f"{hours} hour" + ("s" if hours > 1 else ""))
-    if minutes > 0:
-        parts.append(f"{minutes} minute" + ("s" if minutes > 1 else ""))
-    if secs > 0 and hours == 0:
-        parts.append(f"{secs} second" + ("s" if secs > 1 else ""))
+    if hours > 0: parts.append(f"{hours} hour" + ("s" if hours > 1 else ""))
+    if minutes > 0: parts.append(f"{minutes} minute" + ("s" if minutes > 1 else ""))
+    if secs > 0 and hours == 0: parts.append(f"{secs} second" + ("s" if secs > 1 else ""))
         
     return " ".join(parts)
 
@@ -167,8 +163,7 @@ def get_user_tier(uid: int) -> str:
                 for line in f:
                     if line.strip() and "," in line:
                         user_str, tier, expiry_str = line.strip().split(',')
-                        if int(user_str) == uid and float(expiry_str) > time.time():
-                            return tier
+                        if int(user_str) == uid and float(expiry_str) > time.time(): return tier
     except Exception: pass
     return 'basic'
 
@@ -180,10 +175,25 @@ def get_active_perks(uid: int) -> set:
                 for line in f:
                     if line.strip() and "," in line:
                         user_str, perk, expiry_str = line.strip().split(',')
-                        if int(user_str) == uid and float(expiry_str) > time.time():
-                            perks.add(perk)
+                        if int(user_str) == uid and float(expiry_str) > time.time(): perks.add(perk)
     except Exception: pass
     return perks
+
+def load_autoreply_settings():
+    try:
+        if os.path.exists("autoreply_status.txt"):
+            with open("autoreply_status.txt", "r", encoding="utf-8") as f:
+                return f.read().strip() == "True"
+    except: pass
+    return True
+
+def load_autoreply_text():
+    try:
+        if os.path.exists("autoreply_text.txt"):
+            with open("autoreply_text.txt", "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except: pass
+    return "Use @TapahConfessionBot to submit your confession\n\nIf you're trying to contact the owner, just leave the message as-is.\n\n-Dev"
 
 def get_main_keyboard():
     return InlineKeyboardMarkup([
@@ -212,7 +222,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_txt, parse_mode='HTML', reply_markup=get_main_keyboard())
 
 async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command for owner to gift a level/tier to a desired user."""
     if not update.message or update.message.from_user.id != OWNER_ID: return
     if len(context.args) < 3:
         await update.message.reply_text(
@@ -252,7 +261,6 @@ async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ User ID and Days must be valid numbers.")
 
 async def revoke_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Command for owner/dev to revoke a user subscription with reasoning."""
     if not update.message or update.message.from_user.id != OWNER_ID: return
     if len(context.args) < 2:
         await update.message.reply_text("❌ Format: <code>/revoke <user_id> <reason></code>", parse_mode='HTML')
@@ -333,7 +341,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(status_txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'nav_summary':
-        guide_txt = (
+        summary_txt = (
             "📖 <b>Subscription & Perks Summary</b>\n\n"
             "<b>Normal User (Default)</b>\n- 30s personal queue duration\n- 4h photo & link limit\n- Delete own posts only\n\n"
             "<b>Tier 1 (100 ⭐️ / 14 Days)</b>\n- 15s personal queue duration\n- 4h photo & link limit\n- Delete own & others posts\n\n"
@@ -343,7 +351,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<b>Immunity Perk (100 ⭐️ / 12 Hours)</b>\n- Prevents non-admins from deleting post"
         )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='nav_main')]])
-        await query.edit_message_text(guide_txt, parse_mode='HTML', reply_markup=markup)
+        await query.edit_message_text(summary_txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'nav_guide':
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='nav_main')]])
@@ -470,6 +478,35 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text(f"❌ Failed to notify user {target_uid}: {e}")
 
+async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    enabled = load_autoreply_settings()
+    if not enabled: return
+    
+    msg = update.message
+    if not msg or not msg.from_user: return
+    
+    raw_msg = msg.to_dict()
+    is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
+    if not is_channel_dm: return
+
+    chat_id = msg.chat_id
+    now = time.time()
+
+    if str(msg.from_user.id) == str(OWNER_ID):
+        auto_reply_pauses[chat_id] = now + AUTO_REPLY_PAUSE_DURATION
+        return
+
+    if chat_id in auto_reply_pauses:
+        if now < auto_reply_pauses[chat_id]:
+            return  
+        else:
+            del auto_reply_pauses[chat_id]  
+
+    try: 
+        reply_text = load_autoreply_text()
+        await msg.reply_text(reply_text)
+    except Exception as e: pass
+
 async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
     if query.invoice_payload.startswith("purchase_"):
@@ -513,6 +550,7 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
+    application.add_handler(MessageHandler((filters.ChatType.SUPERGROUP | filters.ChatType.GROUPS) & ~filters.COMMAND, group_auto_reply))
 
     print("--- Cashier Subscription Bot is Online ---")
     application.run_polling()
