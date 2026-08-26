@@ -179,7 +179,6 @@ try:
 except ValueError:
     sys.exit(1)
 
-# --- REAL-TIME DISK READERS (Fixes Desync Bugs) ---
 def load_banned_words() -> Set[str]:
     words = set()
     try:
@@ -605,6 +604,77 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
 async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE): await _schedule_post(update, context, 'text')
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE): await _schedule_post(update, context, 'photo')
 
+async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    user = update.message.from_user
+    user_id = user.id
+    if user_id not in load_agreed_users() and not is_owner(user_id):
+        await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
+        return
+    if await is_user_restricted(user.id, update): return
+    
+    target_chat = None
+    msg_id = None
+    if hasattr(update.message, 'forward_origin') and update.message.forward_origin:
+        origin = update.message.forward_origin
+        if getattr(origin, 'type', '') == 'channel':
+            target_chat = str(origin.chat.id)
+            msg_id = getattr(origin, 'message_id', None)
+    elif update.message.forward_from_chat:
+        target_chat = str(update.message.forward_from_chat.id)
+        msg_id = update.message.forward_from_message_id
+        
+    if not target_chat or not msg_id: return
+
+    if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
+        is_privileged = is_owner_or_mod(user_id)
+        now = datetime.datetime.now()
+        
+        post_record = query_post_history(msg_id)
+        current_tier = get_user_tier(user.id)
+        cfg = TIER_CONFIG[current_tier]
+
+        if cfg['delete_access'] == 'own' and post_record['user_id'] != user.id and not is_privileged:
+            await update.message.reply_text("❌ Access Denied. Your tier metrics do not match authorship signatures.")
+            return
+
+        if post_record['is_immune'] and not is_privileged:
+            await update.message.reply_text("🛡️ This post is covered under active Immunity perks. It cannot be deleted.")
+            return
+
+        if not is_privileged:
+            last_del = user_delete_cooldowns.get(user_id)
+            if last_del and (now - last_del).total_seconds() < cfg['delete_cooldown']:
+                rem = cfg['delete_cooldown'] - (now - last_del).total_seconds()
+                await update.message.reply_text(f"⏳ Please wait {format_duration(rem)} before deleting again.")
+                return
+
+        try:
+            await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
+            if not is_privileged: user_delete_cooldowns[user_id] = now
+            await update.message.reply_text("🗑 Message successfully deleted from channel.")
+            
+            content = update.message.text or update.message.caption or "[Media with no caption]"
+            raw_username = user.username
+            display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
+            safe_user = html.escape(str(user.first_name))
+            safe_uid = html.escape(str(user_id))
+            safe_content = html.escape(content)
+            
+            owner_log_txt = (
+                f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
+            )
+            await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='HTML')
+
+            mod_log_txt = (
+                f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n"
+                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
+            )
+            await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='HTML')
+            
+        except Exception as e: await update.message.reply_text(f"❌ Could not delete: {e}")
+
 async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target = int(context.args[0])
@@ -974,6 +1044,46 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_setautoreply': "✏️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort."
         }
         await query.edit_message_text(text=prompts.get(query.data, "Please provide input. Type /cancel to abort."), parse_mode='HTML')
+
+async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    if user_id not in load_agreed_users() and not is_owner(user_id):
+        await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
+        return
+
+    if user_id in action_states:
+        state = action_states[user_id]
+        context.args = update.message.text.split()
+        if state == 'trig_ban': await ban_user(update, context)
+        elif state == 'trig_unban': await unban_user(update, context)
+        elif state == 'trig_timeout': await timeout_user(update, context)
+        elif state == 'trig_rmtimeout': await remove_timeout(update, context)
+        elif state == 'trig_addmod': await add_mod(update, context)
+        elif state == 'trig_rmmod': await remove_mod(update, context)
+        elif state == 'trig_addword': await add_banned_word(update, context)
+        elif state == 'trig_rmword': await remove_banned_word(update, context)
+        elif state == 'trig_settime': await set_time(update, context)
+        elif state == 'trig_setautoreply': 
+            global AUTO_REPLY_TEXT
+            AUTO_REPLY_TEXT = update.message.text
+            save_autoreply_settings()
+            await update.message.reply_text("✅ Auto-reply message updated successfully!")
+        del action_states[user_id]
+        return
+    await handle_confession(update, context)
+
+async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    if user_id not in load_agreed_users() and not is_owner(user_id):
+        await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
+        return
+    if user_id in action_states:
+        await update.message.reply_text("❌ Action cancelled. I was expecting text for the command.")
+        del action_states[user_id]
+        return
+    await handle_photo(update, context)
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(context.error, NetworkError): return
