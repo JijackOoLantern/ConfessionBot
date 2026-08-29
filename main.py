@@ -200,7 +200,7 @@ def _call_ollama(text: str) -> str:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:
             result = json.loads(response.read().decode("utf-8"))
             return result.get("response", "").strip()
     except Exception as e:
