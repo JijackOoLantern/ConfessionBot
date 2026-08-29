@@ -6,6 +6,8 @@ import re
 import asyncio
 import logging
 import html
+import urllib.request
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -177,10 +179,37 @@ try:
     OWNER_ID_STR = os.environ.get('OWNER_ID')
     LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
     MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') 
+    AI_LOG_CHANNEL_ID = os.environ.get('AI_LOG_CHANNEL_ID')
     if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID]): sys.exit(1)
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
     sys.exit(1)
+
+# --- AI MODERATION FUNCTIONS ---
+def _call_ollama(text: str) -> str:
+    """Sends text to local Ollama API synchronously."""
+    if not text: return "NONE"
+    payload = {
+        "model": "tapah-guard",
+        "prompt": f"Input: \"{text}\"\nOutput:",
+        "stream": False
+    }
+    try:
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            return result.get("response", "").strip()
+    except Exception as e:
+        return f"ERROR: {e}"
+
+async def classify_text(text: str) -> str:
+    """Wraps the Ollama call in an async thread to prevent bot lag."""
+    return await asyncio.to_thread(_call_ollama, text)
+# -------------------------------
 
 def load_banned_words() -> Set[str]:
     words = set()
@@ -575,6 +604,23 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         else:
             await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
             return
+
+    # --- AI SHADOW MONITORING LOGIC ---
+    if text_stripped and AI_LOG_CHANNEL_ID:
+        # Run AI check asynchronously so bot doesn't freeze
+        ai_decision = await classify_text(text_stripped)
+        
+        try:
+            log_msg = (
+                f"🤖 <b>AI Shadow Monitor</b>\n\n"
+                f"<b>User ID:</b> <code>{user.id}</code>\n"
+                f"<b>AI Decision:</b> <b>{html.escape(ai_decision)}</b>\n\n"
+                f"<b>Original Content:</b>\n{html.escape(text_stripped)}"
+            )
+            await context.bot.send_message(chat_id=AI_LOG_CHANNEL_ID, text=log_msg, parse_mode='HTML')
+        except Exception as e:
+            print(f"Failed to send to AI log channel: {e}")
+    # ----------------------------------
 
     current_tier = get_user_tier(user.id)
     active_perks = get_active_perks(user.id)
