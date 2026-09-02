@@ -127,7 +127,7 @@ GUIDE_TEXT = (
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- Ads are STRICTLY posted to the Marketplace channel.\n"
     "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
-    "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
+    "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel, OR posting an advertisement inside the Confession channel, will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
     "<u>Mature Content 🔞</u>\n"
     "- Promoting explicit content will result in an instant and permanent ban. No appeals.\n\n"
     "<u>Deletion</u>\n"
@@ -454,6 +454,8 @@ def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_con
     
     if category == "Advertisement":
         log_message += f"\n\n<i>Mod Tip: If this is a confession in the Ad channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted confession in Ad channel</code>\n"
+    elif category == "Confession":
+        log_message += f"\n\n<i>Mod Tip: If this is an ad in the Confession channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted ad in Confession channel</code>\n"
         
     return log_message
 
@@ -863,7 +865,7 @@ async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return False
 
 async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if not is_owner_or_mod(update.message.from_user.id): return False
+    if not is_owner(update.message.from_user.id): return False
     try:
         word = " ".join(context.args).lower()
         if not word: raise IndexError
@@ -878,7 +880,7 @@ async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return False
 
 async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if not is_owner_or_mod(update.message.from_user.id): return False
+    if not is_owner(update.message.from_user.id): return False
     try:
         word = " ".join(context.args).lower()
         if not word: raise IndexError
@@ -1231,11 +1233,11 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == 'menu_manage_words':
         if not is_owner_or_mod(user_id): return
         txt = "🤬 <b>Banned Words Management</b>\nChoose an action below:"
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("👁️ View Words", callback_data='menu_view_words')],
-            [InlineKeyboardButton("➕ Add Word", callback_data='trig_addword'), InlineKeyboardButton("➖ Remove Word", callback_data='trig_rmword')],
-            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
-        ])
+        buttons = [[InlineKeyboardButton("👁️ View Words", callback_data='menu_view_words')]]
+        if is_owner(user_id):
+            buttons.append([InlineKeyboardButton("➕ Add Word", callback_data='trig_addword'), InlineKeyboardButton("➖ Remove Word", callback_data='trig_rmword')])
+        buttons.append([InlineKeyboardButton("◀️ Back", callback_data='menu_back')])
+        markup = InlineKeyboardMarkup(buttons)
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_view_words':
@@ -1246,8 +1248,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
-        if query.data in ['trig_ban', 'trig_unban'] and not is_owner(user_id):
-            await query.edit_message_text("❌ Only the Owner/Developer can ban users.")
+        if query.data in ['trig_ban', 'trig_unban', 'trig_addword', 'trig_rmword', 'trig_addmod', 'trig_rmmod', 'trig_settime', 'trig_setautoreply'] and not is_owner(user_id):
+            await query.edit_message_text("❌ Only the Owner/Developer can perform this action.")
             return
 
         action_states[user_id] = query.data
