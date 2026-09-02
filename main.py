@@ -6,8 +6,6 @@ import re
 import asyncio
 import logging
 import html
-import urllib.request
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -122,45 +120,32 @@ def format_duration(seconds: Union[int, float]) -> str:
     return " ".join(parts)
 
 GUIDE_TEXT = (
-    "<b>UiTM Tapah Confession Bot Guide and Conditions.</b>\n\n"
-    "<u>User</u>\n"
-    "- Any user of the bot will get Basic Level of Subscription. To get advanced level access, read subscription.\n\n"
-    "<u>Posts</u>\n"
-    "- Posts are anonymous.\n"
-    "- All posts will be queued according to their level of subscription. Meaning many user = long queue. This is to reduce spamming an collectively be mindful of our interaction.\n\n"
-    "For example Basic Level. User A need to wait for 30 seconds before it's confession being posted. User B who posts immediately after User A, will need to wait for 60 seconds before it's confession being posted. User A queue 30 seconds + own queue 30 seconds.\n\n"
+    "<b>UiTM Tapah Confession & Marketplace Bot Guide.</b>\n\n"
+    "<u>Posts & Queue</u>\n"
+    "- Posts are anonymous and will be queued according to subscription level to prevent spam.\n"
+    "- Queue Example: Basic Level user waits 30 seconds. Next user waits 60s, etc.\n\n"
+    "<u>Marketplace / Advertisements 🛒</u>\n"
+    "- Ads are STRICTLY posted to the Marketplace channel.\n"
+    "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
+    "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
+    "<u>Mature Content 🔞</u>\n"
+    "- Promoting explicit content will result in an instant and permanent ban. No appeals.\n\n"
     "<u>Deletion</u>\n"
-    "- To delete a post, forward the message to the bot.\n"
-    "- A timeout will be imposed for any users who send \"delete\" (not case sensitive)\n\n"
-    "<u>Queue Time</u>\n"
-    "- Queue time is to replace cooldown.\n"
-    "- Queue time is bound by level of subscription.\n\n"
-    "<u>Timeout</u>\n"
-    "- Timed punishment for user imposed by Dev/Mod, with the reason of posting unpleasant posts.\n\n"
+    "- To delete a post, forward the message to the bot from either channel.\n"
+    "- Sending the word \"delete\" directly to the bot will result in a timeout.\n\n"
     "<u>Subscription/Perks</u>\n"
-    "- Optional add-on to improve bot user interaction.\n"
-    "- Subscription Based.\n"
-    "- No refund will be issued.\n\n"
-    "<u>Subscription for Clubs</u>\n"
-    "- Only 2 accounts allowed for any clubs & association\n"
-    "- Strictly only for clubs related posts\n"
-    "- Any post made in the interest of personal related will risk the access to subscription revoked and will not be refunded.\n\n"
+    "- Optional add-ons to improve bot interaction. Non-refundable.\n"
+    "- Clubs/Associations get 2 accounts strictly for club posts. Misuse leads to revocation.\n\n"
     "<u>Developer/Moderator (Dev/Mod)</u>\n"
-    "- Developer is the one who develop the bot and the channel.\n"
-    "- Moderator is the one who manages the channel with their own willingness.\n"
     "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n\n"
-    "<u>Mature Content</u>\n"
-    "- Any posts showing clear signs of mature content that risks the banning of the channel, will be deleted and the sender of the post will be banned and no appeal will be heard.\n\n"
     "<u>Banned Words/User</u>\n"
-    "- Any words that is banned will not be posted. The list is updated periodically.\n"
-    "- Banned user is allowed to appeal with the judgement of Dev.\n"
-    "- User that is banned with the request of Mod is not allowed to appeal."
+    "- Banned users can appeal to Dev. Mod-requested bans are not open to appeal."
 )
 
 TNC_TEXT = (
-    "👋 Welcome to Tapah Confession Bot!\n\n"
-    "By tapping below, you acknowledge and agree to fully abide by the terms, structural rules, "
-    "and timeout regulations outlined in our operational guide."
+    "👋 Welcome to Tapah Confession & Marketplace Bot!\n\n"
+    "By tapping below, you acknowledge and agree to fully abide by the updated terms, structural rules, "
+    "Marketplace guidelines, and strict timeout regulations outlined in our operational guide."
 )
 
 global_next_post_time = None
@@ -168,6 +153,7 @@ user_delete_cooldowns: Dict[int, datetime.datetime] = {}
 user_link_cooldowns: Dict[int, datetime.datetime] = {}
 user_photo_cooldowns: Dict[int, datetime.datetime] = {} 
 auto_reply_pauses: Dict[int, float] = {}
+pending_submissions: Dict[int, Dict[str, Any]] = {}
 
 AWAITING_HELP_MESSAGE = 0
 action_states: Dict[int, str] = {}
@@ -179,37 +165,11 @@ try:
     OWNER_ID_STR = os.environ.get('OWNER_ID')
     LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
     MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') 
-    AI_LOG_CHANNEL_ID = os.environ.get('AI_LOG_CHANNEL_ID')
-    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID]): sys.exit(1)
+    AD_CHANNEL_ID = os.environ.get('AD_CHANNEL_ID')
+    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID, AD_CHANNEL_ID]): sys.exit(1)
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
     sys.exit(1)
-
-# --- AI MODERATION FUNCTIONS ---
-def _call_ollama(text: str) -> str:
-    """Sends text to local Ollama API synchronously."""
-    if not text: return "NONE"
-    payload = {
-        "model": "tapah-guard",
-        "prompt": f"Input: \"{text}\"\nOutput:",
-        "stream": False
-    }
-    try:
-        req = urllib.request.Request(
-            "http://localhost:11434/api/generate",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=60) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            return result.get("response", "").strip()
-    except Exception as e:
-        return f"ERROR: {e}"
-
-async def classify_text(text: str) -> str:
-    """Wraps the Ollama call in an async thread to prevent bot lag."""
-    return await asyncio.to_thread(_call_ollama, text)
-# -------------------------------
 
 def load_banned_words() -> Set[str]:
     words = set()
@@ -266,8 +226,8 @@ def load_moderators() -> Set[int]:
 def load_agreed_users() -> Set[int]:
     users = set()
     try:
-        if os.path.exists("agreed_users.txt"):
-            with open("agreed_users.txt", "r", encoding="utf-8") as f:
+        if os.path.exists("agreed_users_v2.txt"):
+            with open("agreed_users_v2.txt", "r", encoding="utf-8") as f:
                 users = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return users
@@ -275,7 +235,7 @@ def load_agreed_users() -> Set[int]:
 def save_agreed_user(uid):
     users = load_agreed_users()
     if uid not in users:
-        with open("agreed_users.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
+        with open("agreed_users_v2.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
 
 def load_known_users() -> Set[int]:
     ids = set()
@@ -403,12 +363,14 @@ async def log_admin_action(context: ContextTypes.DEFAULT_TYPE, action_type: str,
     except Exception as e:
         print(f"Failed to send mod admin log: {e}")
 
-async def is_user_restricted(user_id: int, update: Update) -> bool:
+async def is_user_restricted(user_id: int, update: Update=None, context: ContextTypes.DEFAULT_TYPE=None) -> bool:
     if is_owner_or_mod(user_id): return False 
     
     banned_users = load_banned_users()
     if user_id in banned_users:
-        await update.message.reply_text(f"🚫 You are permanently banned.\n<b>Reason:</b> {html.escape(banned_users[user_id])}", parse_mode='HTML')
+        msg = f"🚫 You are permanently banned.\n<b>Reason:</b> {html.escape(banned_users[user_id])}"
+        if update: await update.message.reply_text(msg, parse_mode='HTML')
+        elif context: await context.bot.send_message(user_id, msg, parse_mode='HTML')
         return True
         
     timeouts = load_timeouts()
@@ -418,7 +380,9 @@ async def is_user_restricted(user_id: int, update: Update) -> bool:
         remaining = expiry - time.time()
         if remaining > 0:
             formatted_rem = format_duration(remaining)
-            await update.message.reply_text(f"⏳ You are in timeout. Please wait another {formatted_rem}.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
+            msg = f"⏳ You are in timeout. Please wait another {formatted_rem}.\n<b>Reason:</b> {html.escape(reason)}"
+            if update: await update.message.reply_text(msg, parse_mode='HTML')
+            elif context: await context.bot.send_message(user_id, msg, parse_mode='HTML')
             return True
         else:
             del timeouts[user_id]
@@ -454,19 +418,22 @@ def check_for_banned_words(text: str) -> bool:
             if word in text_lower: return True
     return False
 
-def contains_link(message) -> bool:
-    text = (message.text or message.caption or "").lower()
-    return "http://" in text or "https://" in text or "www." in text
+def contains_link_text(text: str) -> bool:
+    if not text: return False
+    text_lower = text.lower()
+    return "http://" in text_lower or "https://" in text_lower or "www." in text_lower
 
 def create_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     raw_username = job_info.get('username')
     display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
     safe_name = html.escape(str(job_info['user_name']))
     safe_uid = html.escape(str(job_info['user_id']))
+    category = job_info.get('category', 'Confession')
     
     log_message = (
-        f"<b>New {content_type} Confession Log</b>\n\n"
+        f"<b>New {content_type} {category} Log</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
+        f"<b>Type:</b> {category}\n"
         f"<b>Name:</b> {safe_name}\n"
         f"<b>Username:</b> {display_username}\n\n"
     )
@@ -476,12 +443,18 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
 
 def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     safe_uid = html.escape(str(job_info['user_id']))
+    category = job_info.get('category', 'Confession')
     log_message = (
-        f"<b>New {content_type} Confession Log (Moderator View)</b>\n\n"
-        f"<b>User ID:</b> <code>{safe_uid}</code>\n\n"
+        f"<b>New {content_type} {category} Log (Moderator View)</b>\n\n"
+        f"<b>User ID:</b> <code>{safe_uid}</code>\n"
+        f"<b>Type:</b> {category}\n\n"
     )
     content_to_log = text_content or job_info.get('caption')
     if content_to_log: log_message += f"<b>Content:</b>\n{html.escape(content_to_log)}"
+    
+    if category == "Advertisement":
+        log_message += f"\n\n<i>Mod Tip: If this is a confession in the Ad channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted confession in Ad channel</code>\n"
+        
     return log_message
 
 def get_tnc_keyboard():
@@ -566,93 +539,48 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await msg.reply_text(AUTO_REPLY_TEXT)
     except Exception: pass
 
-async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, post_type: str):
+
+async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], post_category: str, target_chat_id: str):
     global global_next_post_time
-    if not update.message or not update.message.from_user: return
-    user = update.message.from_user
     user_id = user.id
-    save_user(user_id)
-    
-    if user_id not in load_agreed_users() and not is_owner(user_id):
-        await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
-        return
-
     is_privileged = is_owner_or_mod(user_id)
-    if await is_user_restricted(user_id, update): return
-
-    text_to_check = update.message.text if post_type == 'text' else (update.message.caption or "")
-    text_stripped = text_to_check.strip()
     
-    if post_type == 'text' and text_stripped.lower() == 'delete':
-        if not is_privileged:
-            expiry_time = time.time() + 60
-            timeouts = load_timeouts()
-            timeouts[user.id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt."}
-            save_timeouts_to_disk(timeouts)
-            
-            await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
-            
-            str_id = str(user.id)
-            masked_id = str_id[:4] + "*" * (len(str_id) - 4)
-            await context.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for 1m.\n<b>Reason:</b> Invalid deletion attempt.",
-                parse_mode='HTML'
-            )
-            await log_admin_action(context, "Timeout (Auto)", "System", user.id, "Invalid deletion attempt ('delete')", "1 minute")
-            return
-        else:
-            await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
-            return
+    if await is_user_restricted(user_id, context=context): return
 
-    # --- AI SHADOW MONITORING LOGIC ---
-    if text_stripped and AI_LOG_CHANNEL_ID:
-        # Run AI check asynchronously so bot doesn't freeze
-        ai_decision = await classify_text(text_stripped)
-        
-        try:
-            log_msg = (
-                f"🤖 <b>AI Shadow Monitor</b>\n\n"
-                f"<b>User ID:</b> <code>{user.id}</code>\n"
-                f"<b>AI Decision:</b> <b>{html.escape(ai_decision)}</b>\n\n"
-                f"<b>Original Content:</b>\n{html.escape(text_stripped)}"
-            )
-            await context.bot.send_message(chat_id=AI_LOG_CHANNEL_ID, text=log_msg, parse_mode='HTML')
-        except Exception as e:
-            print(f"Failed to send to AI log channel: {e}")
-    # ----------------------------------
-
-    current_tier = get_user_tier(user.id)
-    active_perks = get_active_perks(user.id)
+    post_type = submission['type']
+    text_to_check = submission['text']
+    
+    current_tier = get_user_tier(user_id)
+    active_perks = get_active_perks(user_id)
     cfg = TIER_CONFIG[current_tier]
 
     if post_type == 'photo':
         if not PHOTOS_ENABLED and not is_privileged:
-            await update.message.reply_text("❌ Photo confessions are currently disabled.")
+            await context.bot.send_message(user_id, "❌ Photo posts are currently disabled.")
             return
         if not is_privileged:
             now = datetime.datetime.now()
             last_photo = user_photo_cooldowns.get(user_id)
             if last_photo and (now - last_photo).total_seconds() < cfg['photo_cooldown']:
                 rem = cfg['photo_cooldown'] - (now - last_photo).total_seconds()
-                await update.message.reply_text(f"⏳ Photos limited to once every {format_duration(cfg['photo_cooldown'])}. Please wait {format_duration(rem)}.")
+                await context.bot.send_message(user_id, f"⏳ Photos limited to once every {format_duration(cfg['photo_cooldown'])}. Please wait {format_duration(rem)}.")
                 return
             user_photo_cooldowns[user_id] = now
 
     if check_for_banned_words(text_to_check) and not is_privileged:
-        await update.message.reply_text("❌ Your message contains words that are not allowed.")
+        await context.bot.send_message(user_id, "❌ Your message contains words that are not allowed.")
         return
 
-    if contains_link(update.message):
+    if contains_link_text(text_to_check):
         if not LINKS_ENABLED and not is_privileged:
-            await update.message.reply_text("❌ Link sharing is currently disabled.")
+            await context.bot.send_message(user_id, "❌ Link sharing is currently disabled.")
             return
         if not is_privileged:
             now = datetime.datetime.now()
             last_link = user_link_cooldowns.get(user_id)
             if last_link and (now - last_link).total_seconds() < cfg['link_cooldown']:
                 rem = cfg['link_cooldown'] - (now - last_link).total_seconds()
-                await update.message.reply_text(f"⏳ Links limited to once every {format_duration(cfg['link_cooldown'])}. Please wait {format_duration(rem)}.")
+                await context.bot.send_message(user_id, f"⏳ Links limited to once every {format_duration(cfg['link_cooldown'])}. Please wait {format_duration(rem)}.")
                 return
             user_link_cooldowns[user_id] = now
 
@@ -677,22 +605,30 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         global_next_post_time = scheduled_time
         final_delay = (scheduled_time - now_tz).total_seconds()
     
-    job_context = {'chat_id': CHANNEL_ID, 'user_id': user.id, 'user_name': user.first_name, 'username': user.username, 'is_immune': 'immunity' in active_perks}
+    job_context = {
+        'chat_id': target_chat_id, 
+        'user_id': user.id, 
+        'user_name': user.first_name, 
+        'username': user.username, 
+        'is_immune': 'immunity' in active_perks,
+        'category': post_category
+    }
     
     if post_type == 'text':
         job_context['text'] = text_to_check
         context.job_queue.run_once(post_text, final_delay, data=job_context)
     else:
-        job_context['photo'] = update.message.photo[-1].file_id
+        job_context['photo'] = submission['photo']
         job_context['caption'] = text_to_check
         context.job_queue.run_once(post_photo, final_delay, data=job_context)
 
     if final_delay == 0:
-        await update.message.reply_text("✅ Confession sent instantly!")
+        await context.bot.send_message(user_id, f"✅ {post_category} sent instantly!")
     elif base_delay == 0 and final_delay > 0:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
-        await update.message.reply_text(
-            f"🕒 <b>Confession Queued!</b>\n"
+        await context.bot.send_message(
+            user_id,
+            f"🕒 <b>{post_category} Queued!</b>\n"
             f"Wait Time: <b>{format_duration(final_delay)}</b>\n"
             f"Estimated Post Time: <b>{est_time_str}</b>\n\n"
             f"💡 <i>Want a better experience? Skip the queue or reduce your wait time by subscribing at {SUB_BOT_URL}</i>",
@@ -700,10 +636,7 @@ async def _schedule_post(update: Update, context: ContextTypes.DEFAULT_TYPE, pos
         )
     else:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
-        await update.message.reply_text(f"🌙 Bot is currently in sleep mode. Your confession is queued for {est_time_str}.")
-
-async def handle_confession(update: Update, context: ContextTypes.DEFAULT_TYPE): await _schedule_post(update, context, 'text')
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE): await _schedule_post(update, context, 'photo')
+        await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your {post_category.lower()} is queued for {est_time_str}.")
 
 async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -727,7 +660,11 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     if not target_chat or not msg_id: return
 
-    if target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat:
+    is_channel = (target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat)
+    is_ad_channel = (target_chat == str(AD_CHANNEL_ID) or f"@{AD_CHANNEL_ID.lstrip('@')}" == target_chat)
+
+    if is_channel or is_ad_channel:
+        actual_target_chat = CHANNEL_ID if is_channel else AD_CHANNEL_ID
         is_privileged = is_owner_or_mod(user_id)
         now = datetime.datetime.now()
         
@@ -751,7 +688,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         try:
-            await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
+            await context.bot.delete_message(chat_id=actual_target_chat, message_id=msg_id)
             if not is_privileged: user_delete_cooldowns[user_id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
@@ -1090,6 +1027,47 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer() 
     user_id = query.from_user.id
 
+    if query.data in ['submit_confession', 'submit_ad']:
+        submission = pending_submissions.get(user_id)
+        if not submission:
+            await query.edit_message_text("❌ Session expired. Please send your message again.")
+            return
+        
+        post_category = "Confession" if query.data == 'submit_confession' else "Advertisement"
+        target_chat_id = CHANNEL_ID if post_category == "Confession" else AD_CHANNEL_ID
+        
+        if post_category == "Advertisement":
+            has_photo = submission['type'] == 'photo'
+            text_content = submission['text']
+            
+            text_nospace = text_content.replace(' ', '').replace('-', '')
+            phone_pattern = r'(\+?6?01\d{8,9})'
+            has_phone = bool(re.search(phone_pattern, text_nospace))
+            has_link = contains_link_text(text_content)
+            has_username = '@' in text_content
+            
+            if not (has_photo or has_phone or has_link or has_username):
+                await query.edit_message_text(
+                    "❌ <b>Advertisement Rejected</b>\n\n"
+                    "Ads MUST contain at least one of the following:\n"
+                    "- A photo\n- A web link\n- A phone number\n- A Telegram username (@)\n\n"
+                    "Please edit your message and try again.", 
+                    parse_mode='HTML'
+                )
+                del pending_submissions[user_id]
+                return
+        
+        await query.edit_message_text(f"✅ Processing as {post_category}...")
+        await _schedule_post_direct(query.from_user, context, submission, post_category, target_chat_id)
+        del pending_submissions[user_id]
+        return
+
+    elif query.data == 'submit_cancel':
+        if user_id in pending_submissions:
+            del pending_submissions[user_id]
+        await query.edit_message_text("❌ Submission cancelled.")
+        return
+
     if query.data == 'tc_agree':
         save_agreed_user(user_id)
         role_title, reply_markup = get_main_menu(user_id)
@@ -1149,7 +1127,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = (
             f"📊 <b>Bot Statistics</b>\n\n"
             f"👥 <b>Total Users:</b> <code>{len(load_known_users())}</code>\n"
-            f"✅ <b>Agreed Users:</b> <code>{len(load_agreed_users())}</code>\n"
+            f"✅ <b>Agreed Users (V2):</b> <code>{len(load_agreed_users())}</code>\n"
             f"🚫 <b>Banned Users:</b> <code>{len(load_banned_users())}</code>\n"
             f"👮‍♂️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
             f"⏳ <b>Uptime:</b> <code>{uptime_str}</code>\n\n"
@@ -1169,9 +1147,9 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = (
             f"📜 <b>Terms & Conditions Stats</b>\n\n"
             f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
-            f"✅ <b>Agreed:</b> <code>{agreed_users}</code>\n"
+            f"✅ <b>Agreed (V2):</b> <code>{agreed_users}</code>\n"
             f"⏳ <b>Pending Agreement:</b> <code>{pending_users}</code>\n\n"
-            f"<i>Note: Users in the 'Pending' list cannot send confessions or use the bot until they click 'I Agree'.</i>"
+            f"<i>Note: Users in the 'Pending' list cannot send confessions or use the bot until they click 'I Agree' to the new rules.</i>"
         )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         await query.edit_message_text(text=msg, parse_mode='HTML', reply_markup=markup)
@@ -1320,7 +1298,40 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del action_states[user_id]
         return
 
-    await handle_confession(update, context)
+    text_stripped = update.message.text.strip()
+    
+    if text_stripped.lower() == 'delete':
+        is_privileged = is_owner_or_mod(user_id)
+        if not is_privileged:
+            expiry_time = time.time() + 60
+            timeouts = load_timeouts()
+            timeouts[user_id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt."}
+            save_timeouts_to_disk(timeouts)
+            await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
+            str_id = str(user_id)
+            masked_id = str_id[:4] + "*" * (len(str_id) - 4)
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for 1m.\n<b>Reason:</b> Invalid deletion attempt.",
+                parse_mode='HTML'
+            )
+            await log_admin_action(context, "Timeout (Auto)", "System", user_id, "Invalid deletion attempt ('delete')", "1 minute")
+            return
+        else:
+            await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
+            return
+
+    pending_submissions[user_id] = {
+        'type': 'text',
+        'text': text_stripped,
+        'photo': None
+    }
+    keyboard = [
+        [InlineKeyboardButton("🗣️ Submit as Confession", callback_data="submit_confession")],
+        [InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]
+    ]
+    await update.message.reply_text("Where would you like to post this?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -1332,7 +1343,19 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Action cancelled. I was expecting text for the command.")
         del action_states[user_id]
         return
-    await handle_photo(update, context)
+
+    text_stripped = update.message.caption.strip() if update.message.caption else ""
+    pending_submissions[user_id] = {
+        'type': 'photo',
+        'text': text_stripped,
+        'photo': update.message.photo[-1].file_id
+    }
+    keyboard = [
+        [InlineKeyboardButton("🗣️ Submit as Confession", callback_data="submit_confession")],
+        [InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]
+    ]
+    await update.message.reply_text("Where would you like to post this photo?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(context.error, NetworkError): return
@@ -1341,7 +1364,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     try:
-        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+. Started at {now_str}")
+        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Marketplace Setup. Started at {now_str}")
     except Exception: pass
 
 def main():
@@ -1372,7 +1395,7 @@ def main():
     application.add_handler(CommandHandler("revoke", revoke_subscription))
     application.add_handler(CommandHandler("gift", gift_subscription))
 
-    application.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_|toggle_|tc_)'))
+    application.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_|toggle_|tc_|submit_)'))
     application.add_handler(MessageHandler(filters.FORWARDED, handle_delete))
     application.add_handler(MessageHandler((filters.ChatType.SUPERGROUP | filters.ChatType.GROUPS) & ~filters.COMMAND, group_auto_reply))
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.PHOTO, handle_photo_input))
