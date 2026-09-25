@@ -6,6 +6,7 @@ import re
 import asyncio
 import logging
 import html
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -50,7 +51,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 90,      
+        'personal_queue_duration': 180,      
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
@@ -149,7 +150,6 @@ TNC_TEXT = (
     "Marketplace guidelines, and strict timeout regulations outlined in our operational guide."
 )
 
-global_next_post_time = None
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
 user_link_cooldowns: Dict[int, datetime.datetime] = {}
 user_photo_cooldowns: Dict[int, datetime.datetime] = {} 
@@ -171,6 +171,34 @@ try:
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
     sys.exit(1)
+
+# --- PERSISTENT QUEUE SYSTEM ---
+def load_persistent_queue() -> list:
+    try:
+        if os.path.exists("persistent_queue.json"):
+            with open("persistent_queue.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception: pass
+    return []
+
+def save_persistent_queue(queue_list: list):
+    with open("persistent_queue.json", "w", encoding="utf-8") as f:
+        json.dump(queue_list, f, ensure_ascii=False, indent=4)
+
+def save_global_time(dt):
+    with open("global_time.txt", "w") as f:
+        f.write(str(dt.timestamp()))
+
+def load_global_time():
+    try:
+        if os.path.exists("global_time.txt"):
+            with open("global_time.txt", "r") as f:
+                return datetime.datetime.fromtimestamp(float(f.read().strip()), TIMEZONE)
+    except: pass
+    return None
+
+global_next_post_time = load_global_time()
+# -------------------------------
 
 def load_banned_words() -> Set[str]:
     words = set()
@@ -499,39 +527,47 @@ def get_main_menu(user_id: int):
         ]
     return role_title, InlineKeyboardMarkup(keyboard)
 
-async def post_text(context: ContextTypes.DEFAULT_TYPE):
-    job_info = context.job.data
-    user_id = job_info['user_id']
-    
-    # Last-second check to ensure user wasn't restricted while waiting in queue
-    if user_id in load_banned_users(): return
-    timeouts = load_timeouts()
-    if user_id in timeouts and timeouts[user_id]['expiry'] > time.time(): return
-
+# --- EXECUTION FUNCTIONS ---
+async def execute_post_text(bot, job_info):
     try:
-        msg = await context.bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
+        msg = await bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
         append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
-        await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
-        await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
+        await bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
     except Exception as e: print(f"Post Error: {e}")
 
-async def post_photo(context: ContextTypes.DEFAULT_TYPE):
-    job_info = context.job.data
-    user_id = job_info['user_id']
-    
-    # Last-second check to ensure user wasn't restricted while waiting in queue
-    if user_id in load_banned_users(): return
-    timeouts = load_timeouts()
-    if user_id in timeouts and timeouts[user_id]['expiry'] > time.time(): return
-
+async def execute_post_photo(bot, job_info):
     try:
-        msg = await context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
+        msg = await bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
         append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
-        await context.bot.send_photo(chat_id=LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
-        await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
-        await context.bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
-        await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
+        await bot.send_photo(chat_id=LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
+        await bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
+        await bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
     except Exception as e: print(f"Post Error: {e}")
+
+async def persistent_queue_worker(context: ContextTypes.DEFAULT_TYPE):
+    """Runs every 5 seconds, checks persistent JSON, and posts what is ready"""
+    pq = load_persistent_queue()
+    if not pq: return
+    
+    now_ts = datetime.datetime.now(TIMEZONE).timestamp()
+    jobs_to_run = []
+    remaining_jobs = []
+    
+    for job in pq:
+        if now_ts >= job['scheduled_time']:
+            jobs_to_run.append(job)
+        else:
+            remaining_jobs.append(job)
+            
+    if jobs_to_run:
+        save_persistent_queue(remaining_jobs) 
+        for job in jobs_to_run:
+            if job['type'] == 'text':
+                await execute_post_text(context.bot, job)
+            else:
+                await execute_post_photo(context.bot, job)
 
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not AUTO_REPLY_ENABLED: return
@@ -549,14 +585,11 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if chat_id in auto_reply_pauses:
-        if now < auto_reply_pauses[chat_id]:
-            return  
-        else:
-            del auto_reply_pauses[chat_id]  
+        if now < auto_reply_pauses[chat_id]: return  
+        else: del auto_reply_pauses[chat_id]  
 
     try: await msg.reply_text(AUTO_REPLY_TEXT)
     except Exception: pass
-
 
 async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], post_category: str, target_chat_id: str):
     global global_next_post_time
@@ -623,22 +656,26 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         global_next_post_time = scheduled_time
         final_delay = (scheduled_time - now_tz).total_seconds()
     
-    job_context = {
-        'chat_id': target_chat_id, 
-        'user_id': user.id, 
-        'user_name': user.first_name, 
-        'username': user.username, 
+    # Save to JSON persistent queue
+    new_job = {
+        'job_id': f"{time.time()}_{user.id}",
+        'scheduled_time': scheduled_time.timestamp(),
+        'chat_id': target_chat_id,
+        'user_id': user.id,
+        'user_name': user.first_name,
+        'username': user.username,
         'is_immune': 'immunity' in active_perks,
-        'category': post_category
+        'category': post_category,
+        'type': post_type,
+        'text': text_to_check if post_type == 'text' else None,
+        'photo': submission['photo'] if post_type == 'photo' else None,
+        'caption': text_to_check if post_type == 'photo' else None
     }
     
-    if post_type == 'text':
-        job_context['text'] = text_to_check
-        context.job_queue.run_once(post_text, final_delay, data=job_context, name=str(user_id))
-    else:
-        job_context['photo'] = submission['photo']
-        job_context['caption'] = text_to_check
-        context.job_queue.run_once(post_photo, final_delay, data=job_context, name=str(user_id))
+    pq = load_persistent_queue()
+    pq.append(new_job)
+    save_persistent_queue(pq)
+    save_global_time(global_next_post_time)
 
     if final_delay == 0:
         await context.bot.send_message(user_id, f"✅ {post_category} sent instantly!")
@@ -804,10 +841,11 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         with open("banned_users.txt", "w", encoding="utf-8") as f:
             for u, r in banned.items(): f.write(f"{u},{r}\n")
             
-        # Clear their entire pending queue safely
-        jobs = context.job_queue.get_jobs_by_name(str(target))
-        cleared_count = len(jobs)
-        for job in jobs: job.schedule_removal()
+        pq = load_persistent_queue()
+        original_len = len(pq)
+        pq = [j for j in pq if j['user_id'] != target]
+        save_persistent_queue(pq)
+        cleared_count = original_len - len(pq)
             
         await update.message.reply_text(f"🚫 User <code>{target}</code> banned.\n<b>Reason:</b> {html.escape(reason)}\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
         await log_admin_action(context, "Ban", user, target, f"{reason} (Cleared {cleared_count} pending posts)")
@@ -851,10 +889,11 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         timeouts[target_id] = {'expiry': expiry_time.timestamp(), 'reason': reason}
         save_timeouts_to_disk(timeouts)
         
-        # Clear their entire pending queue safely
-        jobs = context.job_queue.get_jobs_by_name(str(target_id))
-        cleared_count = len(jobs)
-        for job in jobs: job.schedule_removal()
+        pq = load_persistent_queue()
+        original_len = len(pq)
+        pq = [j for j in pq if j['user_id'] != target_id]
+        save_persistent_queue(pq)
+        cleared_count = original_len - len(pq)
         
         duration_str = format_duration(minutes * 60)
         await update.message.reply_text(f"⏳ User <code>{target_id}</code> timed out for {duration_str}.\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
@@ -922,11 +961,17 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return False
 
 async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global global_next_post_time
     if not update.message or not update.message.from_user: return
-    if await is_user_restricted(update.message.from_user.id, update): return
-    global_next_post_time = datetime.datetime.now(TIMEZONE)
-    await update.message.reply_text("✅ Global Queue Master Line cleared.")
+    user_id = update.message.from_user.id
+    if await is_user_restricted(user_id, update): return
+    
+    pq = load_persistent_queue()
+    original_len = len(pq)
+    pq = [j for j in pq if j['user_id'] != user_id]
+    save_persistent_queue(pq)
+    count = original_len - len(pq)
+    
+    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
 
 async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global global_next_post_time
@@ -935,8 +980,10 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Access Denied.")
         return
         
+    save_persistent_queue([])
     global_next_post_time = datetime.datetime.now(TIMEZONE)
-    await update.message.reply_text("✅ Global Queue Master Line cleared.")
+    save_global_time(global_next_post_time)
+    await update.message.reply_text("✅ Global Queue Master Line and database cleared.")
 
 async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not is_owner(update.message.from_user.id): return
@@ -1133,17 +1180,20 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=GUIDE_TEXT, parse_mode='HTML', reply_markup=markup)
         
     elif query.data == 'menu_clear':
-        jobs = context.job_queue.get_jobs_by_name(str(user_id))
-        count = len(jobs)
-        for job in jobs:
-            job.schedule_removal()
+        pq = load_persistent_queue()
+        original_len = len(pq)
+        pq = [j for j in pq if j['user_id'] != user_id]
+        save_persistent_queue(pq)
+        count = original_len - len(pq)
         await query.edit_message_text(text=f"✅ Cleared {count} of your pending posts from the queue.")
         
     elif query.data == 'menu_clear_global':
         if not is_owner_or_mod(user_id): return
         global global_next_post_time
+        save_persistent_queue([])
         global_next_post_time = datetime.datetime.now(TIMEZONE)
-        await query.edit_message_text(text="✅ Global Queue Master Line has been reset to zero.")
+        save_global_time(global_next_post_time)
+        await query.edit_message_text(text="✅ Global Queue Master Line and database cleared.")
         
     elif query.data == 'menu_close':
         if user_id in action_states: del action_states[user_id]
@@ -1372,9 +1422,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeouts[user_id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt."}
             save_timeouts_to_disk(timeouts)
             
-            # Instant Purge of their pending queue
-            jobs = context.job_queue.get_jobs_by_name(str(user_id))
-            for job in jobs: job.schedule_removal()
+            # Instant Purge of their pending JSON queue
+            pq = load_persistent_queue()
+            pq = [j for j in pq if j['user_id'] != user_id]
+            save_persistent_queue(pq)
             
             await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
             str_id = str(user_id)
@@ -1433,13 +1484,16 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     try:
-        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Marketplace Setup. Started at {now_str}")
+        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Persistent Queue. Started at {now_str}")
     except Exception: pass
 
 def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).read_timeout(30).connect_timeout(30).build()
+    
+    # Initialize the Persistent Queue Worker
+    application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
     
     application.add_error_handler(error_handler)
     application.add_handler(ConversationHandler(
