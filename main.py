@@ -50,7 +50,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 180,      
+        'personal_queue_duration': 180,  # Updated to 3 minutes    
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
@@ -123,16 +123,17 @@ GUIDE_TEXT = (
     "<b>UiTM Tapah Confession & Marketplace Bot Guide.</b>\n\n"
     "<u>Posts & Queue</u>\n"
     "- Posts are anonymous and will be queued according to subscription level to prevent spam.\n"
-    "- Queue Example: Basic Level user waits 30 seconds. Next user waits 60s, etc.\n\n"
+    "- Queue Example: Basic Level user waits 3 minutes. Next user waits 6 mins, etc.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- Ads are STRICTLY posted to the Marketplace channel.\n"
     "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
     "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel, OR posting an advertisement inside the Confession channel, will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
     "<u>Mature Content 🔞</u>\n"
     "- Promoting explicit content will result in an instant and permanent ban. No appeals.\n\n"
-    "<u>Deletion</u>\n"
-    "- To delete a post, forward the message to the bot from either channel.\n"
-    "- Sending the word \"delete\" directly to the bot will result in a timeout.\n\n"
+    "<u>Deletion & Queue Management</u>\n"
+    "- To delete a LIVE post, forward the message to the bot from either channel.\n"
+    "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
+    "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
     "<u>Subscription/Perks</u>\n"
     "- Optional add-ons to improve bot interaction. Non-refundable.\n"
     "- Clubs/Associations get 2 accounts strictly for club posts. Misuse leads to revocation.\n\n"
@@ -470,30 +471,31 @@ def get_main_menu(user_id: int):
     if is_owner(user_id):
         role_title = "👑 Owner Panel"
         keyboard = [
-            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time')],
-            [InlineKeyboardButton("🤖 Auto-Reply", callback_data='menu_autoreply'), InlineKeyboardButton("📜 T&C Stats", callback_data='menu_tnc_stats')],
-            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods')],
-            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
-            [InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links'), InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos')],
-            [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
+            [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("📈 Insights", callback_data='menu_insights')],
+            [InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time'), InlineKeyboardButton("🤖 Auto-Reply", callback_data='menu_autoreply')],
+            [InlineKeyboardButton("📜 T&C Stats", callback_data='menu_tnc_stats'), InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
+            [InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods'), InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans')],
+            [InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts'), InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links')],
+            [InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear Global Queue", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     elif is_owner_or_mod(user_id):
         role_title = "👮‍♂️ Moderator Panel"
         keyboard = [
-            [InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
-            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
-            [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
+            [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
+            [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear Global Queue", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
         role_title = "User"
         keyboard = [
             [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     return role_title, InlineKeyboardMarkup(keyboard)
 
@@ -618,11 +620,11 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     
     if post_type == 'text':
         job_context['text'] = text_to_check
-        context.job_queue.run_once(post_text, final_delay, data=job_context)
+        context.job_queue.run_once(post_text, final_delay, data=job_context, name=str(user_id))
     else:
         job_context['photo'] = submission['photo']
         job_context['caption'] = text_to_check
-        context.job_queue.run_once(post_photo, final_delay, data=job_context)
+        context.job_queue.run_once(post_photo, final_delay, data=job_context, name=str(user_id))
 
     if final_delay == 0:
         await context.bot.send_message(user_id, f"✅ {post_category} sent instantly!")
@@ -894,10 +896,27 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
         return False
 
+# Clear normal user's OWN queue
 async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    if await is_user_restricted(user_id, update): return
+    
+    jobs = context.job_queue.get_jobs_by_name(str(user_id))
+    count = len(jobs)
+    for job in jobs:
+        job.schedule_removal()
+        
+    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
+
+# Clear global queue (Owner/Mod only)
+async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global global_next_post_time
     if not update.message or not update.message.from_user: return
-    if await is_user_restricted(update.message.from_user.id, update): return
+    if not is_owner_or_mod(update.message.from_user.id): 
+        await update.message.reply_text("❌ Access Denied.")
+        return
+        
     global_next_post_time = datetime.datetime.now(TIMEZONE)
     await update.message.reply_text("✅ Global Queue Master Line cleared.")
 
@@ -1094,10 +1113,20 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == 'menu_guide':
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         await query.edit_message_text(text=GUIDE_TEXT, parse_mode='HTML', reply_markup=markup)
+        
     elif query.data == 'menu_clear':
+        jobs = context.job_queue.get_jobs_by_name(str(user_id))
+        count = len(jobs)
+        for job in jobs:
+            job.schedule_removal()
+        await query.edit_message_text(text=f"✅ Cleared {count} of your pending posts from the queue.")
+        
+    elif query.data == 'menu_clear_global':
+        if not is_owner_or_mod(user_id): return
         global global_next_post_time
         global_next_post_time = datetime.datetime.now(TIMEZONE)
-        await query.edit_message_text(text="✅ Global Queue Master Line cleared.")
+        await query.edit_message_text(text="✅ Global Queue Master Line has been reset to zero.")
+        
     elif query.data == 'menu_close':
         if user_id in action_states: del action_states[user_id]
         await query.edit_message_text(text="👋 Menu closed. Send a message or photo to confess.")
@@ -1122,6 +1151,21 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
+
+    elif query.data == 'menu_insights':
+        if not is_owner_or_mod(user_id): return
+        now_tz = datetime.datetime.now(TIMEZONE)
+        global_wait = max(0, (global_next_post_time - now_tz).total_seconds()) if global_next_post_time else 0
+        
+        lines = ["📈 <b>Queue Insights (Current Wait Times)</b>\n"]
+        for tier_code, cfg in TIER_CONFIG.items():
+            tier_wait = global_wait + cfg['personal_queue_duration']
+            lines.append(f"• <b>{cfg['name']}:</b> {format_duration(tier_wait)}")
+        
+        lines.append(f"\n<i>*Wait times include the global queue delay ({format_duration(global_wait)}) plus the tier's personal queue duration.</i>")
+        
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
+        await query.edit_message_text(text="\n".join(lines), parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_stats':
         if not is_owner(user_id): return
@@ -1394,6 +1438,7 @@ def main():
     application.add_handler(CommandHandler("addban", add_banned_word))
     application.add_handler(CommandHandler("removeban", remove_banned_word))
     application.add_handler(CommandHandler("clearqueue", clear_queue))
+    application.add_handler(CommandHandler("clearallqueue", clear_all_queue))
     application.add_handler(CommandHandler("revoke", revoke_subscription))
     application.add_handler(CommandHandler("gift", gift_subscription))
 
