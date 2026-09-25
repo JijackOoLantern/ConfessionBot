@@ -50,7 +50,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 180,  # Updated to 3 minutes    
+        'personal_queue_duration': 180,      
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
@@ -501,6 +501,13 @@ def get_main_menu(user_id: int):
 
 async def post_text(context: ContextTypes.DEFAULT_TYPE):
     job_info = context.job.data
+    user_id = job_info['user_id']
+    
+    # Last-second check to ensure user wasn't restricted while waiting in queue
+    if user_id in load_banned_users(): return
+    timeouts = load_timeouts()
+    if user_id in timeouts and timeouts[user_id]['expiry'] > time.time(): return
+
     try:
         msg = await context.bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
         append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
@@ -510,6 +517,13 @@ async def post_text(context: ContextTypes.DEFAULT_TYPE):
 
 async def post_photo(context: ContextTypes.DEFAULT_TYPE):
     job_info = context.job.data
+    user_id = job_info['user_id']
+    
+    # Last-second check to ensure user wasn't restricted while waiting in queue
+    if user_id in load_banned_users(): return
+    timeouts = load_timeouts()
+    if user_id in timeouts and timeouts[user_id]['expiry'] > time.time(): return
+
     try:
         msg = await context.bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
         append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
@@ -789,8 +803,14 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         banned[target] = reason
         with open("banned_users.txt", "w", encoding="utf-8") as f:
             for u, r in banned.items(): f.write(f"{u},{r}\n")
-        await update.message.reply_text(f"🚫 User <code>{target}</code> banned.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
-        await log_admin_action(context, "Ban", user, target, reason)
+            
+        # Clear their entire pending queue safely
+        jobs = context.job_queue.get_jobs_by_name(str(target))
+        cleared_count = len(jobs)
+        for job in jobs: job.schedule_removal()
+            
+        await update.message.reply_text(f"🚫 User <code>{target}</code> banned.\n<b>Reason:</b> {html.escape(reason)}\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
+        await log_admin_action(context, "Ban", user, target, f"{reason} (Cleared {cleared_count} pending posts)")
         return True
     except (IndexError, ValueError):
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <reason></code>\nExample: <code>123456789 Spamming channel</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
@@ -831,8 +851,13 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         timeouts[target_id] = {'expiry': expiry_time.timestamp(), 'reason': reason}
         save_timeouts_to_disk(timeouts)
         
+        # Clear their entire pending queue safely
+        jobs = context.job_queue.get_jobs_by_name(str(target_id))
+        cleared_count = len(jobs)
+        for job in jobs: job.schedule_removal()
+        
         duration_str = format_duration(minutes * 60)
-        await update.message.reply_text(f"⏳ User <code>{target_id}</code> timed out for {duration_str}.", parse_mode='HTML')
+        await update.message.reply_text(f"⏳ User <code>{target_id}</code> timed out for {duration_str}.\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
         
         str_id = str(target_id)
         masked_id = str_id[:4] + "*" * (len(str_id) - 4)
@@ -841,7 +866,7 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
             text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for {duration_str}.\n<b>Reason:</b> {html.escape(reason)}",
             parse_mode='HTML'
         )
-        await log_admin_action(context, "Timeout", user, target_id, reason, duration_str)
+        await log_admin_action(context, "Timeout", user, target_id, f"{reason} (Cleared {cleared_count} pending posts)", duration_str)
         return True
     except (IndexError, ValueError):
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <minutes> <reason></code>\nExample: <code>123456789 60 Flooding chat</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
@@ -896,20 +921,13 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
         return False
 
-# Clear normal user's OWN queue
 async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global global_next_post_time
     if not update.message or not update.message.from_user: return
-    user_id = update.message.from_user.id
-    if await is_user_restricted(user_id, update): return
-    
-    jobs = context.job_queue.get_jobs_by_name(str(user_id))
-    count = len(jobs)
-    for job in jobs:
-        job.schedule_removal()
-        
-    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
+    if await is_user_restricted(update.message.from_user.id, update): return
+    global_next_post_time = datetime.datetime.now(TIMEZONE)
+    await update.message.reply_text("✅ Global Queue Master Line cleared.")
 
-# Clear global queue (Owner/Mod only)
 async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global global_next_post_time
     if not update.message or not update.message.from_user: return
@@ -1353,6 +1371,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeouts = load_timeouts()
             timeouts[user_id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt."}
             save_timeouts_to_disk(timeouts)
+            
+            # Instant Purge of their pending queue
+            jobs = context.job_queue.get_jobs_by_name(str(user_id))
+            for job in jobs: job.schedule_removal()
+            
             await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
             str_id = str(user_id)
             masked_id = str_id[:4] + "*" * (len(str_id) - 4)
