@@ -51,7 +51,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 90,      
+        'personal_queue_duration': 60,      
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
@@ -724,6 +724,13 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.datetime.now()
         
         post_record = query_post_history(msg_id)
+
+        # --- NEW SAFETY CHECK ---
+        if post_record['user_id'] is None:
+            await update.message.reply_text("❌ <b>Action Rejected</b>\nThis message cannot be deleted by the bot because it was either posted manually by an Admin or it is too old to be in the bot's history logs.", parse_mode='HTML')
+            return
+        # ------------------------
+        
         current_tier = get_user_tier(user.id)
         cfg = TIER_CONFIG[current_tier]
 
