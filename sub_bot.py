@@ -32,23 +32,41 @@ OWNER_ID = int(OWNER_ID_STR)
 
 # Defined Products
 PRODUCTS = {
-    'tier1': {'name': 'Tier 1 Premium (14 Days)', 'price': 100, 'desc': '15s queue, delete all, 14 days access.'},
-    'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '15s queue, long photo cd, 14 days access.'},
-    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 200, 'desc': 'Instantly removes your active timeout.'}
+    'tier1': {'name': 'Tier 1 Premium (14 Days)', 'price': 100, 'desc': '30s queue, delete all, 14 days access.'},
+    'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '60s queue, long photo cd, 14 days access.'},
+    'club': {'name': 'Club/Assoc Sub (30 Days)', 'price': 200, 'desc': 'Instant posting, no queue, 30 days access.'},
+    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 50, 'desc': 'Instantly removes your active timeout.'}
 }
 
 AWAITING_CLUB_DETAILS = 1
+
+def load_approved_clubs() -> set:
+    clubs = set()
+    try:
+        if os.path.exists("approved_clubs.txt"):
+            with open("approved_clubs.txt", "r", encoding="utf-8") as f:
+                clubs = {int(line.strip()) for line in f if line.strip().isdigit()}
+    except: pass
+    return clubs
+
+def save_approved_club(uid: int):
+    clubs = load_approved_clubs()
+    if uid not in clubs:
+        with open("approved_clubs.txt", "a", encoding="utf-8") as f:
+            f.write(f"{uid}\n")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(f"⭐ Tier 1 Premium - 100 Stars", callback_data='buy_tier1')],
         [InlineKeyboardButton(f"⭐ Tier 2 Premium - 50 Stars", callback_data='buy_tier2')],
-        [InlineKeyboardButton(f"📝 Club/Assoc Sub - Apply (Free)", callback_data='apply_club')],
-        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 200 Stars", callback_data='buy_clear_timeout')]
+        [InlineKeyboardButton(f"📝 Club Sub - Apply (Free)", callback_data='apply_club'),
+         InlineKeyboardButton(f"⭐ Buy Club - 200 Stars", callback_data='buy_club')],
+        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 50 Stars", callback_data='buy_clear_timeout')]
     ]
     msg = (
         "🛒 <b>Welcome to the Tapah Store!</b>\n\n"
         "Purchase premium tiers or apply for verified Club access.\n"
+        "<i>Note: Clubs must Apply and be approved by the Dev before they can Buy.</i>\n\n"
         "Select an item below:"
     )
     if update.message:
@@ -62,6 +80,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = query.data
     if action.startswith('buy_'):
         prod_id = action.split('_', 1)[1]
+        
+        # Guard clause for Club Purchases
+        if prod_id == 'club':
+            approved_clubs = load_approved_clubs()
+            if query.from_user.id not in approved_clubs and query.from_user.id != OWNER_ID:
+                await query.answer("❌ You must Apply for a Club Sub and be approved by the Developer before purchasing!", show_alert=True)
+                return ConversationHandler.END
+
         if prod_id in PRODUCTS:
             prod = PRODUCTS[prod_id]
             title = prod['name']
@@ -95,15 +121,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
             
         target_uid = int(action.split('_')[2])
-        expiry = time.time() + (30 * 86400) # 30 days
-        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
-            f.write(f"{target_uid},club,{expiry}\n")
+        save_approved_club(target_uid)
             
-        await query.edit_message_text(f"✅ Club access approved for User <code>{target_uid}</code>.", parse_mode='HTML')
+        await query.edit_message_text(f"✅ Club access approved for User <code>{target_uid}</code>. They can now purchase it.", parse_mode='HTML')
         try:
             await context.bot.send_message(
                 chat_id=target_uid, 
-                text="🎉 <b>Application Approved!</b>\nYou have been granted Club Sub access for 30 days.\nYour posts will now bypass the queue instantly.", 
+                text="🎉 <b>Application Approved!</b>\nYour Club application has been accepted by the Developer.\nYou can now purchase the Club Subscription for 200 Stars by typing /start and clicking '⭐ Buy Club'.", 
                 parse_mode='HTML'
             )
         except Exception:
@@ -166,8 +190,8 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
         prod_id = parts[1]
         user_id = update.message.from_user.id
         
-        if prod_id in ['tier1', 'tier2']:
-            days = 14
+        if prod_id in ['tier1', 'tier2', 'club']:
+            days = 14 if prod_id in ['tier1', 'tier2'] else 30
             expiry = time.time() + (days * 86400)
             with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
                 f.write(f"{user_id},{prod_id},{expiry}\n")
