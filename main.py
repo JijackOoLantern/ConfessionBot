@@ -51,7 +51,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 60,      
+        'personal_queue_duration': 120,      
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
@@ -61,7 +61,7 @@ TIER_CONFIG = {
         'name': 'Tier 1 Premium',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 15,      
+        'personal_queue_duration': 30,      
         'delete_cooldown': 30,    
         'delete_access': 'all',
         'price': 100,             
@@ -71,7 +71,7 @@ TIER_CONFIG = {
         'name': 'Tier 2 Premium',
         'link_cooldown': 14400,   
         'photo_cooldown': 21600,  
-        'personal_queue_duration': 15,      
+        'personal_queue_duration': 60,      
         'delete_cooldown': 60,    
         'delete_access': 'all',
         'price': 50,              
@@ -81,26 +81,11 @@ TIER_CONFIG = {
         'name': 'Club/Association Sub',
         'link_cooldown': 3600,    
         'photo_cooldown': 3600,   
-        'personal_queue_duration': 15,      
+        'personal_queue_duration': 0, # Instant     
         'delete_cooldown': 0,     
         'delete_access': 'own',
         'price': 200,             
         'duration_days': 30       
-    }
-}
-
-PERK_CONFIG = {
-    'immunity': {
-        'name': 'Immunity Perk',
-        'desc': 'Post cannot be deleted by others',
-        'price': 100,             
-        'duration_hours': 12      
-    },
-    'spotlight': {
-        'name': 'Spotlight Perk',
-        'desc': 'Instantly skips the post queue',
-        'price': 100,             
-        'duration_hours': 12      
     }
 }
 
@@ -122,9 +107,10 @@ def format_duration(seconds: Union[int, float]) -> str:
 
 GUIDE_TEXT = (
     "<b>UiTM Tapah Confession & Marketplace Bot Guide.</b>\n\n"
-    "<u>Posts & Queue</u>\n"
-    "- Posts are anonymous and will be queued according to subscription level to prevent spam.\n"
-    "- Queue Example: Basic Level user waits 3 minutes. Next user waits 6 mins, etc.\n\n"
+    "<u>Posts & Tier-Based Queue</u>\n"
+    "- Posts are anonymous. To prevent spam, posts are queued according to your subscription tier. "
+    "Basic users do not wait behind Premium users, as each tier has its own independent traffic line.\n"
+    "- Basic Level waits 3 minutes. Tier 1/2 waits 15 seconds. Club posts are Instant.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- Ads are STRICTLY posted to the Marketplace channel.\n"
     "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
@@ -135,12 +121,12 @@ GUIDE_TEXT = (
     "- To delete a LIVE post, forward the message to the bot from either channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
     "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
-    "<u>Subscription/Perks</u>\n"
-    "- Optional add-ons to improve bot interaction. Non-refundable.\n"
-    "- Clubs/Associations get 2 accounts strictly for club posts. Misuse leads to revocation.\n\n"
+    "<u>Subscriptions & Timeouts</u>\n"
+    "- Optional Subscriptions improve bot interaction and queue times. Non-refundable.\n"
+    "- Clubs/Associations get 2 accounts strictly for club posts. Misuse leads to revocation.\n"
+    "- Timed punishments are imposed for rule-breaking. Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass in the Subscription Store.\n\n"
     "<u>Developer/Moderator (Dev/Mod)</u>\n"
-    "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n\n"
-    "<u>Banned Words/User</u>\n"
+    "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n"
     "- Banned users can appeal to Dev. Mod-requested bans are not open to appeal."
 )
 
@@ -185,19 +171,18 @@ def save_persistent_queue(queue_list: list):
     with open("persistent_queue.json", "w", encoding="utf-8") as f:
         json.dump(queue_list, f, ensure_ascii=False, indent=4)
 
-def save_global_time(dt):
-    with open("global_time.txt", "w") as f:
-        f.write(str(dt.timestamp()))
-
-def load_global_time():
+def load_tier_times() -> Dict[str, datetime.datetime]:
     try:
-        if os.path.exists("global_time.txt"):
-            with open("global_time.txt", "r") as f:
-                return datetime.datetime.fromtimestamp(float(f.read().strip()), TIMEZONE)
+        if os.path.exists("tier_times.json"):
+            with open("tier_times.json", "r") as f:
+                data = json.load(f)
+                return {k: datetime.datetime.fromtimestamp(v, TIMEZONE) for k, v in data.items()}
     except: pass
-    return None
+    return {}
 
-global_next_post_time = load_global_time()
+def save_tier_times(times_dict: Dict[str, datetime.datetime]):
+    with open("tier_times.json", "w") as f:
+        json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
 # -------------------------------
 
 def load_banned_words() -> Set[str]:
@@ -324,21 +309,9 @@ def get_user_tier(uid: int) -> str:
     except: pass
     return 'basic'
 
-def get_active_perks(uid: int) -> Set[str]:
-    active_perks = set()
-    try:
-        if os.path.exists("active_perks.txt"):
-            with open("active_perks.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip() and "," in line:
-                        user_str, perk_type, expiry_str = line.strip().split(',')
-                        if int(user_str) == uid and float(expiry_str) > time.time(): active_perks.add(perk_type)
-    except: pass
-    return active_perks
-
-def append_post_history(message_id: int, user_id: int, is_immune: bool):
+def append_post_history(message_id: int, user_id: int):
     with open("post_history.txt", "a", encoding="utf-8") as f:
-        f.write(f"{message_id},{user_id},{1 if is_immune else 0}\n")
+        f.write(f"{message_id},{user_id},0\n")
 
 def query_post_history(message_id: int) -> Dict[str, Any]:
     try:
@@ -346,11 +319,11 @@ def query_post_history(message_id: int) -> Dict[str, Any]:
             with open("post_history.txt", "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip() and "," in line:
-                        msg_id, uid, immune_flag = line.strip().split(',')
+                        msg_id, uid, _ = line.strip().split(',')
                         if int(msg_id) == message_id:
-                            return {'user_id': int(uid), 'is_immune': int(immune_flag) == 1}
+                            return {'user_id': int(uid)}
     except: pass
-    return {'user_id': None, 'is_immune': False}
+    return {'user_id': None}
 
 def is_owner(uid: int) -> bool:
     return uid == OWNER_ID
@@ -409,7 +382,11 @@ async def is_user_restricted(user_id: int, update: Update=None, context: Context
         remaining = expiry - time.time()
         if remaining > 0:
             formatted_rem = format_duration(remaining)
-            msg = f"⏳ You are in timeout. Please wait another {formatted_rem}.\n<b>Reason:</b> {html.escape(reason)}"
+            msg = (
+                f"⏳ You are in timeout. Please wait another {formatted_rem}.\n"
+                f"<b>Reason:</b> {html.escape(reason)}\n\n"
+                f"💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>"
+            )
             if update: await update.message.reply_text(msg, parse_mode='HTML')
             elif context: await context.bot.send_message(user_id, msg, parse_mode='HTML')
             return True
@@ -506,7 +483,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts'), InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links')],
             [InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear Global Queue", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     elif is_owner_or_mod(user_id):
@@ -515,13 +492,13 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear Global Queue", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
         role_title = "User"
         keyboard = [
-            [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
+            [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL), InlineKeyboardButton("📈 View Queue", callback_data='menu_insights')],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
             [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
@@ -531,7 +508,7 @@ def get_main_menu(user_id: int):
 async def execute_post_text(bot, job_info):
     try:
         msg = await bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
-        append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
+        append_post_history(msg.message_id, job_info['user_id'])
         await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
         await bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
     except Exception as e: print(f"Post Error: {e}")
@@ -539,7 +516,7 @@ async def execute_post_text(bot, job_info):
 async def execute_post_photo(bot, job_info):
     try:
         msg = await bot.send_photo(chat_id=job_info['chat_id'], photo=job_info['photo'], caption=job_info['caption'], read_timeout=30)
-        append_post_history(msg.message_id, job_info['user_id'], job_info['is_immune'])
+        append_post_history(msg.message_id, job_info['user_id'])
         await bot.send_photo(chat_id=LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
         await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
         await bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
@@ -592,7 +569,6 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception: pass
 
 async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], post_category: str, target_chat_id: str):
-    global global_next_post_time
     user_id = user.id
     is_privileged = is_owner_or_mod(user_id)
     
@@ -602,7 +578,6 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     text_to_check = submission['text']
     
     current_tier = get_user_tier(user_id)
-    active_perks = get_active_perks(user_id)
     cfg = TIER_CONFIG[current_tier]
 
     if post_type == 'photo':
@@ -639,21 +614,25 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     base_delay = 0
     if not is_bot_active() and not is_privileged:
         base_delay = get_seconds_until_active()
-        
-    if global_next_post_time is None or global_next_post_time < now_tz:
-        global_next_post_time = now_tz
 
-    if is_privileged or 'spotlight' in active_perks:
+    if is_privileged or current_tier == 'club':
         final_delay = 0 
         scheduled_time = now_tz
     else:
+        tier_times = load_tier_times()
+        tier_last_time = tier_times.get(current_tier, now_tz)
+        if tier_last_time < now_tz:
+            tier_last_time = now_tz
+            
         wake_time = now_tz + datetime.timedelta(seconds=base_delay)
-        queue_start = max(now_tz, global_next_post_time, wake_time)
+        queue_start = max(now_tz, tier_last_time, wake_time)
         
         queue_duration = cfg['personal_queue_duration']
         scheduled_time = queue_start + datetime.timedelta(seconds=queue_duration)
         
-        global_next_post_time = scheduled_time
+        tier_times[current_tier] = scheduled_time
+        save_tier_times(tier_times)
+        
         final_delay = (scheduled_time - now_tz).total_seconds()
     
     # Save to JSON persistent queue
@@ -664,7 +643,7 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         'user_id': user.id,
         'user_name': user.first_name,
         'username': user.username,
-        'is_immune': 'immunity' in active_perks,
+        'is_immune': False,
         'category': post_category,
         'type': post_type,
         'text': text_to_check if post_type == 'text' else None,
@@ -675,7 +654,6 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     pq = load_persistent_queue()
     pq.append(new_job)
     save_persistent_queue(pq)
-    save_global_time(global_next_post_time)
 
     if final_delay == 0:
         await context.bot.send_message(user_id, f"✅ {post_category} sent instantly!")
@@ -724,22 +702,17 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         now = datetime.datetime.now()
         
         post_record = query_post_history(msg_id)
-
-        # --- NEW SAFETY CHECK ---
+        
+        # Safety filter
         if post_record['user_id'] is None:
             await update.message.reply_text("❌ <b>Action Rejected</b>\nThis message cannot be deleted by the bot because it was either posted manually by an Admin or it is too old to be in the bot's history logs.", parse_mode='HTML')
             return
-        # ------------------------
-        
+
         current_tier = get_user_tier(user.id)
         cfg = TIER_CONFIG[current_tier]
 
         if cfg['delete_access'] == 'own' and post_record['user_id'] != user.id and not is_privileged:
             await update.message.reply_text("❌ Access Denied. Your tier metrics do not match authorship signatures.")
-            return
-
-        if post_record['is_immune'] and not is_privileged:
-            await update.message.reply_text("🛡️ This post is covered under active Immunity perks. It cannot be deleted.")
             return
 
         if not is_privileged:
@@ -967,31 +940,6 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
         return False
 
-async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.from_user: return
-    user_id = update.message.from_user.id
-    if await is_user_restricted(user_id, update): return
-    
-    pq = load_persistent_queue()
-    original_len = len(pq)
-    pq = [j for j in pq if j['user_id'] != user_id]
-    save_persistent_queue(pq)
-    count = original_len - len(pq)
-    
-    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
-
-async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global global_next_post_time
-    if not update.message or not update.message.from_user: return
-    if not is_owner_or_mod(update.message.from_user.id): 
-        await update.message.reply_text("❌ Access Denied.")
-        return
-        
-    save_persistent_queue([])
-    global_next_post_time = datetime.datetime.now(TIMEZONE)
-    save_global_time(global_next_post_time)
-    await update.message.reply_text("✅ Global Queue Master Line and database cleared.")
-
 async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not is_owner(update.message.from_user.id): return
     if len(context.args) < 3:
@@ -1196,11 +1144,9 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     elif query.data == 'menu_clear_global':
         if not is_owner_or_mod(user_id): return
-        global global_next_post_time
         save_persistent_queue([])
-        global_next_post_time = datetime.datetime.now(TIMEZONE)
-        save_global_time(global_next_post_time)
-        await query.edit_message_text(text="✅ Global Queue Master Line and database cleared.")
+        save_tier_times({})
+        await query.edit_message_text(text="✅ Master Queue and all Tier Databases have been cleared.")
         
     elif query.data == 'menu_close':
         if user_id in action_states: del action_states[user_id]
@@ -1208,18 +1154,15 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     elif query.data == 'menu_my_status':
         tier = get_user_tier(user_id)
-        perks = get_active_perks(user_id)
-        
-        perk_names = [PERK_CONFIG[p]['name'] for p in perks if p in PERK_CONFIG]
-        perk_str = ", ".join(perk_names) if perk_names else "None"
         cfg = TIER_CONFIG[tier]
+        
+        queue_text = "Instant (No Queue)" if cfg['personal_queue_duration'] == 0 else format_duration(cfg['personal_queue_duration'])
         
         txt = (
             f"👤 <b>Runtime Profile Audit</b>\n\n"
-            f"🎫 <b>Owned Access Tier:</b> <code>{cfg['name']}</code>\n"
-            f"⚡ <b>Owned Active Perks:</b> <code>{perk_str}</code>\n\n"
+            f"🎫 <b>Owned Access Tier:</b> <code>{cfg['name']}</code>\n\n"
             f"📊 <b>Active Tier Privileges:</b>\n"
-            f"• Personal Queue Duration: <code>{format_duration(cfg['personal_queue_duration'])}</code>\n"
+            f"• Personal Queue Duration: <code>{queue_text}</code>\n"
             f"• Photo/Link Limit: <code>{format_duration(cfg['photo_cooldown'])}</code>\n"
             f"• Deletion Access: <code>{cfg['delete_access'].title()} posts</code>\n"
             f"• Deletion Cooldown: <code>{format_duration(cfg['delete_cooldown'])}</code>"
@@ -1228,16 +1171,20 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data == 'menu_insights':
-        if not is_owner_or_mod(user_id): return
+        tier_times = load_tier_times()
         now_tz = datetime.datetime.now(TIMEZONE)
-        global_wait = max(0, (global_next_post_time - now_tz).total_seconds()) if global_next_post_time else 0
         
         lines = ["📈 <b>Queue Insights (Current Wait Times)</b>\n"]
         for tier_code, cfg in TIER_CONFIG.items():
-            tier_wait = global_wait + cfg['personal_queue_duration']
-            lines.append(f"• <b>{cfg['name']}:</b> {format_duration(tier_wait)}")
+            if cfg['personal_queue_duration'] == 0:
+                lines.append(f"• <b>{cfg['name']}:</b> Instant (No Queue)")
+            else:
+                last_scheduled = tier_times.get(tier_code, now_tz)
+                wait_sec = max(0, (last_scheduled - now_tz).total_seconds())
+                tier_wait = wait_sec + cfg['personal_queue_duration']
+                lines.append(f"• <b>{cfg['name']}:</b> {format_duration(tier_wait)}")
         
-        lines.append(f"\n<i>*Wait times include the global queue delay ({format_duration(global_wait)}) plus the tier's personal queue duration.</i>")
+        lines.append(f"\n<i>*Wait times reflect the current active traffic load for each individual tier.</i>")
         
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         await query.edit_message_text(text="\n".join(lines), parse_mode='HTML', reply_markup=markup)
@@ -1429,7 +1376,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeouts[user_id] = {'expiry': expiry_time, 'reason': "Invalid deletion attempt."}
             save_timeouts_to_disk(timeouts)
             
-            # Instant Purge of their pending JSON queue
             pq = load_persistent_queue()
             pq = [j for j in pq if j['user_id'] != user_id]
             save_persistent_queue(pq)
@@ -1491,7 +1437,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     try:
-        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Persistent Queue. Started at {now_str}")
+        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Tier-Based Queues. Started at {now_str}")
     except Exception: pass
 
 def main():
@@ -1499,7 +1445,6 @@ def main():
     asyncio.set_event_loop(loop)
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).read_timeout(30).connect_timeout(30).build()
     
-    # Initialize the Persistent Queue Worker
     application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
     
     application.add_error_handler(error_handler)
@@ -1521,8 +1466,6 @@ def main():
     application.add_handler(CommandHandler("untimeout", remove_timeout))
     application.add_handler(CommandHandler("addban", add_banned_word))
     application.add_handler(CommandHandler("removeban", remove_banned_word))
-    application.add_handler(CommandHandler("clearqueue", clear_queue))
-    application.add_handler(CommandHandler("clearallqueue", clear_all_queue))
     application.add_handler(CommandHandler("revoke", revoke_subscription))
     application.add_handler(CommandHandler("gift", gift_subscription))
 
