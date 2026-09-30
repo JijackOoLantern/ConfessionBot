@@ -33,40 +33,24 @@ OWNER_ID = int(OWNER_ID_STR)
 # Defined Products
 PRODUCTS = {
     'tier1': {'name': 'Tier 1 Premium (14 Days)', 'price': 100, 'desc': '30s queue, delete all, 14 days access.'},
-    'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '60s queue, long photo cd, 14 days access.'},
-    'club': {'name': 'Club/Assoc Sub (30 Days)', 'price': 200, 'desc': 'Instant posting, no queue, 30 days access.'},
-    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 50, 'desc': 'Instantly removes your active timeout.'}
+    'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '1m queue, long photo cd, 14 days access.'},
+    'club': {'name': 'Club Sub (30 Days)', 'price': 200, 'desc': 'Instant posting, no queue, 30 days access.'},
+    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 200, 'desc': 'Instantly removes your active timeout.'}
 }
 
 AWAITING_CLUB_DETAILS = 1
-
-def load_approved_clubs() -> set:
-    clubs = set()
-    try:
-        if os.path.exists("approved_clubs.txt"):
-            with open("approved_clubs.txt", "r", encoding="utf-8") as f:
-                clubs = {int(line.strip()) for line in f if line.strip().isdigit()}
-    except: pass
-    return clubs
-
-def save_approved_club(uid: int):
-    clubs = load_approved_clubs()
-    if uid not in clubs:
-        with open("approved_clubs.txt", "a", encoding="utf-8") as f:
-            f.write(f"{uid}\n")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(f"⭐ Tier 1 Premium - 100 Stars", callback_data='buy_tier1')],
         [InlineKeyboardButton(f"⭐ Tier 2 Premium - 50 Stars", callback_data='buy_tier2')],
-        [InlineKeyboardButton(f"📝 Club Sub - Apply (Free)", callback_data='apply_club'),
-         InlineKeyboardButton(f"⭐ Buy Club - 200 Stars", callback_data='buy_club')],
-        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 50 Stars", callback_data='buy_clear_timeout')]
+        [InlineKeyboardButton(f"🏛️ Buy Club Sub - 200 Stars", callback_data='buy_club')],
+        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 200 Stars", callback_data='buy_clear_timeout')]
     ]
     msg = (
         "🛒 <b>Welcome to the Tapah Store!</b>\n\n"
-        "Purchase premium tiers or apply for verified Club access.\n"
-        "<i>Note: Clubs must Apply and be approved by the Dev before they can Buy.</i>\n\n"
+        "Purchase premium tiers or unlock utility passes.\n"
+        "<i>Note: You must Apply and be Approved before buying the Club Sub.</i>\n\n"
         "Select an item below:"
     )
     if update.message:
@@ -78,23 +62,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     action = query.data
+    user_id = query.from_user.id
+    
+    if action == 'buy_club':
+        approved = False
+        try:
+            if os.path.exists("approved_clubs.txt"):
+                with open("approved_clubs.txt", "r") as f:
+                    if str(user_id) in f.read():
+                        approved = True
+        except: pass
+        
+        if not approved:
+            await query.edit_message_text(
+                "❌ <b>Approval Required</b>\n\nYou must be an approved Club or Association to purchase this tier. Please apply first.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Apply for Club", callback_data='apply_club')]]),
+                parse_mode='HTML'
+            )
+            return ConversationHandler.END
+
     if action.startswith('buy_'):
         prod_id = action.split('_', 1)[1]
-        
-        # Guard clause for Club Purchases
-        if prod_id == 'club':
-            approved_clubs = load_approved_clubs()
-            if query.from_user.id not in approved_clubs and query.from_user.id != OWNER_ID:
-                await query.answer("❌ You must Apply for a Club Sub and be approved by the Developer before purchasing!", show_alert=True)
-                return ConversationHandler.END
-
         if prod_id in PRODUCTS:
             prod = PRODUCTS[prod_id]
             title = prod['name']
             description = prod['desc']
-            payload = f"TapahPurchase_{prod_id}_{query.from_user.id}"
+            payload = f"TapahPurchase_{prod_id}_{user_id}"
             
-            # Empty provider token + XTR currency triggers native Telegram Stars payment
             await context.bot.send_invoice(
                 chat_id=query.message.chat_id,
                 title=title,
@@ -116,18 +110,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return AWAITING_CLUB_DETAILS
         
     elif action.startswith('approve_club_'):
-        if query.from_user.id != OWNER_ID:
+        if user_id != OWNER_ID:
             await query.answer("Access Denied", show_alert=True)
             return ConversationHandler.END
             
         target_uid = int(action.split('_')[2])
-        save_approved_club(target_uid)
+        
+        with open("approved_clubs.txt", "a") as f:
+            f.write(f"{target_uid}\n")
             
-        await query.edit_message_text(f"✅ Club access approved for User <code>{target_uid}</code>. They can now purchase it.", parse_mode='HTML')
+        await query.edit_message_text(f"✅ Club access APPROVED for User <code>{target_uid}</code>. They can now purchase it.", parse_mode='HTML')
         try:
             await context.bot.send_message(
                 chat_id=target_uid, 
-                text="🎉 <b>Application Approved!</b>\nYour Club application has been accepted by the Developer.\nYou can now purchase the Club Subscription for 200 Stars by typing /start and clicking '⭐ Buy Club'.", 
+                text="🎉 <b>Application Approved!</b>\nYour Club Application was approved. You can now use the /start command here to purchase the <b>Club Sub</b> for 200 Stars.", 
                 parse_mode='HTML'
             )
         except Exception:
@@ -135,12 +131,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
         
     elif action.startswith('reject_club_'):
-        if query.from_user.id != OWNER_ID:
+        if user_id != OWNER_ID:
             await query.answer("Access Denied", show_alert=True)
             return ConversationHandler.END
             
         target_uid = int(action.split('_')[2])
-        await query.edit_message_text(f"❌ Club access rejected for User <code>{target_uid}</code>.", parse_mode='HTML')
+        await query.edit_message_text(f"❌ Club access REJECTED for User <code>{target_uid}</code>.", parse_mode='HTML')
         try:
             await context.bot.send_message(
                 chat_id=target_uid, 
