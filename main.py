@@ -84,7 +84,7 @@ TIER_CONFIG = {
         'personal_queue_duration': 0, # Instant     
         'delete_cooldown': 0,     
         'delete_access': 'own',
-        'price': 200,             
+        'price': 0,             
         'duration_days': 30       
     }
 }
@@ -110,7 +110,7 @@ GUIDE_TEXT = (
     "<u>Posts & Tier-Based Queue</u>\n"
     "- Posts are anonymous. To prevent spam, posts are queued according to your subscription tier. "
     "Basic users do not wait behind Premium users, as each tier has its own independent traffic line.\n"
-    "- Basic Level waits 3 minutes. Tier 1/2 waits 15 seconds. Club posts are Instant.\n\n"
+    "- Basic Level waits 2 minutes. Club posts are Instant.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- Ads are STRICTLY posted to the Marketplace channel.\n"
     "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
@@ -123,7 +123,7 @@ GUIDE_TEXT = (
     "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
     "<u>Subscriptions & Timeouts</u>\n"
     "- Optional Subscriptions improve bot interaction and queue times. Non-refundable.\n"
-    "- Clubs/Associations get 2 accounts strictly for club posts. Misuse leads to revocation.\n"
+    "- <b>Clubs/Associations must apply for approval via the Store bot.</b> Upon approval, you receive instant, zero-queue posting privileges. Limited to 2 accounts per club strictly for club-related posts. Misuse leads to immediate revocation.\n"
     "- Timed punishments are imposed for rule-breaking. Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass in the Subscription Store.\n\n"
     "<u>Developer/Moderator (Dev/Mod)</u>\n"
     "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n"
@@ -1322,7 +1322,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         prompts = {
             'trig_ban': "🔨 <b>Ban User</b>\nPlease send the target User ID and Reason.\n<i>Example:</i> <code>123456789 Spamming</code>\n\nType /cancel to abort.",
             'trig_unban': "✅ <b>Unban User</b>\nPlease send the target User ID to unban.\n<i>Example:</i> <code>123456789</code>\n\nType /cancel to abort.",
-            'trig_timeout': "⏱️ <b>Timeout User</b>\nPlease send the User ID, Minutes, and Reason.\n<i>Example:</i> <code>123456789 60 Flooding chat</code>\n\nType /cancel to abort.",
+            'trig_timeout': "⏱️️ <b>Timeout User</b>\nPlease send the User ID, Minutes, and Reason.\n<i>Example:</i> <code>123456789 60 Flooding chat</code>\n\nType /cancel to abort.",
             'trig_rmtimeout': "✅ <b>Remove Timeout</b>\nPlease send the target User ID to remove timeout.\n<i>Example:</i> <code>123456789</code>\n\nType /cancel to abort.",
             'trig_addmod': "➕ <b>Add Moderator</b>\nPlease send the User ID to promote.\n<i>Example:</i> <code>123456789</code>\n\nType /cancel to abort.",
             'trig_rmmod': "➖ <b>Remove Moderator</b>\nPlease send the User ID to demote.\n<i>Example:</i> <code>123456789</code>\n\nType /cancel to abort.",
