@@ -34,7 +34,7 @@ OWNER_ID = int(OWNER_ID_STR)
 PRODUCTS = {
     'tier1': {'name': 'Tier 1 Premium (14 Days)', 'price': 100, 'desc': '15s queue, delete all, 14 days access.'},
     'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '15s queue, long photo cd, 14 days access.'},
-    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 50, 'desc': 'Instantly removes your active timeout.'}
+    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 200, 'desc': 'Instantly removes your active timeout.'}
 }
 
 AWAITING_CLUB_DETAILS = 1
@@ -44,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(f"⭐ Tier 1 Premium - 100 Stars", callback_data='buy_tier1')],
         [InlineKeyboardButton(f"⭐ Tier 2 Premium - 50 Stars", callback_data='buy_tier2')],
         [InlineKeyboardButton(f"📝 Club/Assoc Sub - Apply (Free)", callback_data='apply_club')],
-        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 50 Stars", callback_data='buy_clear_timeout')]
+        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 200 Stars", callback_data='buy_clear_timeout')]
     ]
     msg = (
         "🛒 <b>Welcome to the Tapah Store!</b>\n\n"
