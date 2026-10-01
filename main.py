@@ -83,7 +83,7 @@ TIER_CONFIG = {
         'name': 'Normal User (Default)',
         'link_cooldown': 14400,   
         'photo_cooldown': 14400,  
-        'personal_queue_duration': 120,      
+        'personal_queue_duration': 101,      
         'delete_cooldown': 60,  
         'delete_access': 'own',
         'price': 0,
