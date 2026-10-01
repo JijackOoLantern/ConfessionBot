@@ -821,7 +821,7 @@ async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         mods.add(target)
         with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in mods: f.write(f"{m}\n")
-        await update.message.reply_text(f"👮‍♂️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
+        await update.message.reply_text(f"👮‍♂️️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
         await log_admin_action(context, "Add Moderator", update.message.from_user, target, "Promoted to moderator")
         return True
     except (IndexError, ValueError):
@@ -1031,7 +1031,7 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_tier_times({})
     await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
 
-async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1065,7 +1065,7 @@ async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
-async def button_revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1384,7 +1384,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         txt = "🚫 <b>Ban Management (Owner Only)</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
-            [InlineKeyboardButton("◀ Back", callback_data='menu_back')]
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
