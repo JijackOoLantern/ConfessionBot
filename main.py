@@ -153,14 +153,9 @@ try:
     LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
     MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') 
     AD_CHANNEL_ID = os.environ.get('AD_CHANNEL_ID')
-    
-    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID, AD_CHANNEL_ID]):
-        print("CRITICAL ERROR: Missing one or more environment variables in .env")
-        sys.exit(1)
-        
+    if not all([TOKEN, CHANNEL_ID, OWNER_ID_STR, LOG_CHANNEL_ID, MOD_LOG_CHANNEL_ID, AD_CHANNEL_ID]): sys.exit(1)
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
-    print("CRITICAL ERROR: OWNER_ID must be a valid number.")
     sys.exit(1)
 
 # --- PERSISTENT QUEUE SYSTEM ---
@@ -498,7 +493,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -945,7 +940,7 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
         return False
 
-async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -979,7 +974,7 @@ async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
-async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def button_revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1290,7 +1285,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not is_owner_or_mod(user_id): return
         txt = "⏳ <b>Timeout Management</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏱️️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
+            [InlineKeyboardButton("⏱️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
             [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
@@ -1313,6 +1308,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
+        # Permissions check for owner-only actions
         owner_only_actions = ['trig_ban', 'trig_unban', 'trig_addword', 'trig_rmword', 'trig_addmod', 'trig_rmmod', 'trig_settime', 'trig_setautoreply', 'trig_gift', 'trig_revoke']
         if query.data in owner_only_actions and not is_owner(user_id):
             await query.edit_message_text("❌ Only the Owner/Developer can perform this action.")
@@ -1357,8 +1353,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'trig_addword': success = await add_banned_word(update, context)
         elif state == 'trig_rmword': success = await remove_banned_word(update, context)
         elif state == 'trig_settime': success = await set_time(update, context)
-        elif state == 'trig_gift': success = await gift_subscription(update, context)
-        elif state == 'trig_revoke': success = await revoke_subscription(update, context)
+        elif state == 'trig_gift': success = await button_gift_subscription(update, context)
+        elif state == 'trig_revoke': success = await button_revoke_subscription(update, context)
         elif state == 'trig_setautoreply': 
             global AUTO_REPLY_TEXT
             AUTO_REPLY_TEXT = update.message.text
@@ -1428,7 +1424,7 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         'photo': update.message.photo[-1].file_id
     }
     keyboard = [
-        [InlineKeyboardButton("🗣️️ Submit as Confession", callback_data="submit_confession")],
+        [InlineKeyboardButton("🗣️ Submit as Confession", callback_data="submit_confession")],
         [InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")],
         [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]
     ]
@@ -1452,29 +1448,14 @@ def main():
     application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
     
     application.add_error_handler(error_handler)
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("cancel", cancel)) 
-    application.add_handler(CommandHandler("settime", set_time))
-    application.add_handler(CommandHandler("broadcast", broadcast))
-    application.add_handler(CommandHandler("ban", ban_user))
-    application.add_handler(CommandHandler("unban", unban_user))
-    application.add_handler(CommandHandler("addmod", add_mod))
-    application.add_handler(CommandHandler("removemod", remove_mod))
-    application.add_handler(CommandHandler("timeout", timeout_user))
-    application.add_handler(CommandHandler("untimeout", remove_timeout))
-    application.add_handler(CommandHandler("addban", add_banned_word))
-    application.add_handler(CommandHandler("removeban", remove_banned_word))
-    application.add_handler(CommandHandler("revoke", revoke_subscription))
-    application.add_handler(CommandHandler("gift", gift_subscription))
-    application.add_handler(CommandHandler("clearqueue", clear_queue))
-    application.add_handler(CommandHandler("clearallqueue", clear_all_queue))
-
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler('help', help_command)],
         states={AWAITING_HELP_MESSAGE: [MessageHandler(filters.ALL & ~filters.COMMAND, forward_help)]},
         fallbacks=[CommandHandler('cancel', cancel)]
     ))
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("cancel", cancel)) 
 
     application.add_handler(CallbackQueryHandler(menu_button_handler, pattern='^(menu_|trig_|toggle_|tc_|submit_)'))
     application.add_handler(MessageHandler(filters.FORWARDED, handle_delete))
