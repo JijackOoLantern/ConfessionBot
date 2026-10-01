@@ -7,6 +7,10 @@ import asyncio
 import logging
 import html
 import json
+
+# Force the bot to use its own directory so systemctl can always find the .env and .txt files!
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -27,6 +31,12 @@ logging.basicConfig(
     level=logging.INFO
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 try:
     TOKEN = os.environ.get('BOT_TOKEN')
@@ -493,7 +503,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos'), InlineKeyboardButton("🎁 Gift Sub", callback_data='trig_gift')],
             [InlineKeyboardButton("❌ Revoke Sub", callback_data='trig_revoke'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     elif is_owner_or_mod(user_id):
@@ -502,7 +512,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -679,111 +689,6 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     else:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
         await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your {post_category.lower()} is queued for {est_time_str}.")
-
-# --- RESTORED COMMAND FUNCTIONS ---
-async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.from_user: return
-    user_id = update.message.from_user.id
-    if await is_user_restricted(user_id, update): return
-    
-    pq = load_persistent_queue()
-    original_len = len(pq)
-    pq = [j for j in pq if j['user_id'] != user_id]
-    save_persistent_queue(pq)
-    count = original_len - len(pq)
-    
-    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
-
-async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.from_user: return
-    if not is_owner_or_mod(update.message.from_user.id): 
-        await update.message.reply_text("❌ Access Denied.")
-        return
-        
-    save_persistent_queue([])
-    save_tier_times({})
-    await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
-
-async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not is_owner(update.message.from_user.id): return
-    if len(context.args) < 3:
-        await update.message.reply_text(
-            "❌ <b>Format:</b> <code>/gift &lt;user_id&gt; &lt;tier_code&gt; &lt;days&gt;</code>\n"
-            "<i>Valid Tiers:</i> <code>tier1</code>, <code>tier2</code>, <code>club</code>\n"
-            "<i>Example:</i> <code>/gift 123456789 tier1 14</code>",
-            parse_mode='HTML'
-        )
-        return
-    try:
-        target_uid = int(context.args[0])
-        tier_code = context.args[1].lower()
-        days = int(context.args[2])
-        
-        if tier_code not in TIER_CONFIG or tier_code == 'basic':
-            await update.message.reply_text("❌ Invalid tier code. Valid choices: <code>tier1</code>, <code>tier2</code>, <code>club</code>", parse_mode='HTML')
-            return
-            
-        now = time.time()
-        expiry = now + (days * 86400)
-        
-        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
-            f.write(f"{target_uid},{tier_code},{expiry}\n")
-            
-        tier_name = TIER_CONFIG[tier_code]['name']
-        await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
-        await log_admin_action(context, "Gift Subscription", update.message.from_user, target_uid, f"Gifted {tier_name}", f"{days} days")
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_uid,
-                text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days. Enjoy your premium privileges!",
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ Gift logged, but user couldn't be notified directly: {e}")
-    except ValueError:
-        await update.message.reply_text("❌ User ID and Days must be valid numbers.")
-
-async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not is_owner(update.message.from_user.id): return
-    if len(context.args) < 2:
-        await update.message.reply_text("❌ Format: <code>/revoke <user_id> <reason></code>", parse_mode='HTML')
-        return
-    try:
-        target_uid = int(context.args[0])
-        reason = " ".join(context.args[1:])
-        
-        revoked = False
-        remaining_lines = []
-        if os.path.exists("active_subscriptions.txt"):
-            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip() and "," in line:
-                        u_id, tier, expiry = line.strip().split(',')
-                        if int(u_id) == target_uid:
-                            revoked = True
-                        else:
-                            remaining_lines.append(line)
-                            
-        if revoked:
-            with open("active_subscriptions.txt", "w", encoding="utf-8") as f:
-                f.writelines(remaining_lines)
-            
-            await update.message.reply_text(f"✅ Subscription for user <code>{target_uid}</code> has been REVOKED.", parse_mode='HTML')
-            await log_admin_action(context, "Revoke Subscription", update.message.from_user, target_uid, reason)
-            try:
-                await context.bot.send_message(
-                    chat_id=target_uid,
-                    text=f"⚠️ <b>Subscription Revoked</b>\n\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}",
-                    parse_mode='HTML'
-                )
-            except Exception as e:
-                await update.message.reply_text(f"⚠️ Could not notify user {target_uid} directly: {e}")
-        else:
-            await update.message.reply_text(f"⚠️ No active subscription found for user <code>{target_uid}</code>.", parse_mode='HTML')
-    except ValueError:
-        await update.message.reply_text("❌ User ID must be a valid number.")
-# -------------------------------
 
 async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -1052,6 +957,103 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return True
     except IndexError:
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
+        return False
+
+async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    user_id = update.message.from_user.id
+    if await is_user_restricted(user_id, update): return
+    
+    pq = load_persistent_queue()
+    original_len = len(pq)
+    pq = [j for j in pq if j['user_id'] != user_id]
+    save_persistent_queue(pq)
+    count = original_len - len(pq)
+    
+    await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
+
+async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.from_user: return
+    if not is_owner_or_mod(update.message.from_user.id): 
+        await update.message.reply_text("❌ Access Denied.")
+        return
+        
+    save_persistent_queue([])
+    save_tier_times({})
+    await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
+
+async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not is_owner(update.message.from_user.id): return False
+    try:
+        target_uid = int(context.args[0])
+        tier_code = context.args[1].lower()
+        days = int(context.args[2])
+        
+        if tier_code not in TIER_CONFIG or tier_code == 'basic':
+            await update.message.reply_text("❌ Invalid tier code. Valid choices: <code>tier1</code>, <code>tier2</code>, <code>club</code>", parse_mode='HTML')
+            return False
+            
+        now = time.time()
+        expiry = now + (days * 86400)
+        
+        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
+            f.write(f"{target_uid},{tier_code},{expiry}\n")
+            
+        tier_name = TIER_CONFIG[tier_code]['name']
+        await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
+        await log_admin_action(context, "Gift Subscription", update.message.from_user, target_uid, f"Gifted {tier_name}", f"{days} days")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=target_uid,
+                text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days. Enjoy your premium privileges!",
+                parse_mode='HTML'
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ Gift logged, but user couldn't be notified directly: {e}")
+        return True
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
+        return False
+
+async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not is_owner(update.message.from_user.id): return False
+    try:
+        target_uid = int(context.args[0])
+        reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided"
+        
+        revoked = False
+        remaining_lines = []
+        if os.path.exists("active_subscriptions.txt"):
+            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        u_id, tier, expiry = line.strip().split(',')
+                        if int(u_id) == target_uid:
+                            revoked = True
+                        else:
+                            remaining_lines.append(line)
+                            
+        if revoked:
+            with open("active_subscriptions.txt", "w", encoding="utf-8") as f:
+                f.writelines(remaining_lines)
+            
+            await update.message.reply_text(f"✅ Subscription for user <code>{target_uid}</code> has been REVOKED.", parse_mode='HTML')
+            await log_admin_action(context, "Revoke Subscription", update.message.from_user, target_uid, reason)
+            try:
+                await context.bot.send_message(
+                    chat_id=target_uid,
+                    text=f"⚠️ <b>Subscription Revoked</b>\n\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}",
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ Could not notify user {target_uid} directly: {e}")
+            return True
+        else:
+            await update.message.reply_text(f"⚠️ No active subscription found for user <code>{target_uid}</code>.", parse_mode='HTML')
+            return False
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <reason></code>\nExample: <code>123456789 Rule violation</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1325,7 +1327,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not is_owner_or_mod(user_id): return
         txt = "⏳ <b>Timeout Management</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏱️️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
+            [InlineKeyboardButton("⏱️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
             [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
@@ -1348,7 +1350,6 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
-        # Permissions check for owner-only actions
         owner_only_actions = ['trig_ban', 'trig_unban', 'trig_addword', 'trig_rmword', 'trig_addmod', 'trig_rmmod', 'trig_settime', 'trig_setautoreply', 'trig_gift', 'trig_revoke']
         if query.data in owner_only_actions and not is_owner(user_id):
             await query.edit_message_text("❌ Only the Owner/Developer can perform this action.")
@@ -1364,7 +1365,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_rmmod': "➖ <b>Remove Moderator</b>\nPlease send the User ID to demote.\n<i>Example:</i> <code>123456789</code>\n\nType /cancel to abort.",
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
-            'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>\n\nType /cancel to abort.",
+            'trig_settime': "✏️️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>\n\nType /cancel to abort.",
             'trig_setautoreply': "✏️️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
             'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 tier1 14</code>\n\nType /cancel to abort.",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>\n\nType /cancel to abort."
