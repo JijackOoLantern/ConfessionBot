@@ -1,7 +1,14 @@
 import os
 import sys
+import datetime
+import time
+import re
+import asyncio
+import logging
+import html
+import json
 
-# Lock execution to the directory of main.py so systemd always finds .env and database files
+# Force the bot to use its own directory so systemd always finds .env and database files
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 
@@ -11,13 +18,6 @@ try:
 except ImportError:
     pass
 
-import datetime
-import time
-import re
-import asyncio
-import logging
-import html
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -202,6 +202,39 @@ def load_tier_times() -> Dict[str, datetime.datetime]:
 def save_tier_times(times_dict: Dict[str, datetime.datetime]):
     with open("tier_times.json", "w") as f:
         json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
+
+def recalculate_queues(pq_list: list) -> list:
+    """Collapses gaps in the queue whenever items are forcefully posted or deleted."""
+    now_tz = datetime.datetime.now(TIMEZONE)
+    now_ts = now_tz.timestamp()
+    base_delay = get_seconds_until_active() if not is_bot_active() else 0
+    start_ts = now_ts + base_delay
+    
+    new_tier_times = {}
+    for job in pq_list:
+        t = job.get('tier', 'basic')
+        if t == 'ad': q_dur = 120
+        elif t == 'club': q_dur = 0
+        else: q_dur = TIER_CONFIG.get(t, TIER_CONFIG['basic'])['personal_queue_duration']
+        
+        queue_start = max(start_ts, new_tier_times.get(t, start_ts))
+        new_sched = queue_start + q_dur
+        job['scheduled_time'] = new_sched
+        new_tier_times[t] = new_sched
+        
+    current_tier_times = load_tier_times()
+    for t_key in list(current_tier_times.keys()):
+        if t_key in new_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(new_tier_times[t_key], TIMEZONE)
+        else:
+            current_tier_times[t_key] = now_tz
+            
+    for t_key, sched in new_tier_times.items():
+        if t_key not in current_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(sched, TIMEZONE)
+            
+    save_tier_times(current_tier_times)
+    return pq_list
 
 def load_banned_words() -> Set[str]:
     words = set()
@@ -512,7 +545,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -856,6 +889,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         pq = load_persistent_queue()
         original_len = len(pq)
         pq = [j for j in pq if j['user_id'] != target]
+        pq = recalculate_queues(pq)
         save_persistent_queue(pq)
         cleared_count = original_len - len(pq)
             
@@ -904,6 +938,7 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         pq = load_persistent_queue()
         original_len = len(pq)
         pq = [j for j in pq if j['user_id'] != target_id]
+        pq = recalculate_queues(pq)
         save_persistent_queue(pq)
         cleared_count = original_len - len(pq)
         
@@ -980,6 +1015,7 @@ async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pq = load_persistent_queue()
     original_len = len(pq)
     pq = [j for j in pq if j['user_id'] != user_id]
+    pq = recalculate_queues(pq)
     save_persistent_queue(pq)
     count = original_len - len(pq)
     
@@ -995,7 +1031,7 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_tier_times({})
     await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
 
-async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1029,7 +1065,7 @@ async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
-async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def button_revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1187,6 +1223,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         pq = load_persistent_queue()
         original_len = len(pq)
         pq = [j for j in pq if j['user_id'] != user_id]
+        pq = recalculate_queues(pq)
         save_persistent_queue(pq)
         count = original_len - len(pq)
         await query.edit_message_text(text=f"✅ Cleared {count} of your pending posts from the queue.")
@@ -1261,7 +1298,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"👥 <b>Total Users:</b> <code>{len(load_known_users())}</code>\n"
             f"✅ <b>Agreed Users (V2):</b> <code>{len(load_agreed_users())}</code>\n"
             f"🚫 <b>Banned Users:</b> <code>{len(load_banned_users())}</code>\n"
-            f"👮‍♂️️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
+            f"👮‍♂️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
             f"⏳ <b>Uptime:</b> <code>{uptime_str}</code>\n\n"
             f"<b>Feature Status:</b>\n"
             f"🔗 Links: {'✅ Enabled' if LINKS_ENABLED else '❌ Disabled'}\n"
@@ -1347,7 +1384,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         txt = "🚫 <b>Ban Management (Owner Only)</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
-            [InlineKeyboardButton("◀️️ Back", callback_data='menu_back')]
+            [InlineKeyboardButton("◀ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
@@ -1444,9 +1481,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     to_post = pq[:count_to_post]
                     remaining = pq[count_to_post:]
                     
+                    remaining = recalculate_queues(remaining)
                     save_persistent_queue(remaining)
                     
-                    await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now...")
+                    await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
                     
                     for job in to_post:
                         if job['type'] == 'text':
@@ -1477,6 +1515,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             pq = load_persistent_queue()
             pq = [j for j in pq if j['user_id'] != user_id]
+            pq = recalculate_queues(pq)
             save_persistent_queue(pq)
             
             await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
