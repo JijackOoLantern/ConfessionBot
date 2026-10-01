@@ -1,5 +1,16 @@
 import os
 import sys
+
+# Lock execution to the directory of main.py so systemd always finds .env and database files
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=os.path.join(SCRIPT_DIR, '.env'))
+except ImportError:
+    pass
+
 import datetime
 import time
 import re
@@ -29,12 +40,6 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-try:
     TOKEN = os.environ.get('BOT_TOKEN')
     SUB_BOT_URL = os.environ.get('SUB_BOT_URL', 'https://t.me/')
     CHANNEL_ID = os.environ.get('CHANNEL_ID')
@@ -54,12 +59,12 @@ try:
     
     missing_vars = [name for name, val in required_vars.items() if not val]
     if missing_vars:
-        print(f"CRITICAL ERROR: The bot refused to start because these .env variables are missing: {', '.join(missing_vars)}")
+        print(f"CRITICAL ERROR: Missing .env variables: {', '.join(missing_vars)}")
         sys.exit(1)
         
     OWNER_ID = int(OWNER_ID_STR)
 except ValueError:
-    print("CRITICAL ERROR: OWNER_ID must be a number.")
+    print("CRITICAL ERROR: OWNER_ID must be a valid integer.")
     sys.exit(1)
 
 TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur') 
@@ -109,7 +114,7 @@ TIER_CONFIG = {
         'name': 'Club/Association Sub',
         'link_cooldown': 3600,    
         'photo_cooldown': 3600,   
-        'personal_queue_duration': 0, # Instant     
+        'personal_queue_duration': 0,      
         'delete_cooldown': 0,     
         'delete_access': 'own',
         'price': 200,             
@@ -140,7 +145,7 @@ GUIDE_TEXT = (
     "- Basic Level waits 2 minutes. Tier 1 waits 30 seconds. Tier 2 waits 1 minute. Club posts are Instant.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- Ads are STRICTLY posted to the Marketplace channel.\n"
-    "- Ads have a fixed global queue of 2 minutes, regardless of your subscription tier. This prevents ads from flooding the main confession lines.\n"
+    "- Ads have a dedicated global queue of 2 minutes, regardless of tier. This prevents marketplace posts from slowing confession queues.\n"
     "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
     "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel, OR posting an advertisement inside the Confession channel, will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
     "<u>Mature Content 🔞</u>\n"
@@ -173,7 +178,6 @@ pending_submissions: Dict[int, Dict[str, Any]] = {}
 AWAITING_HELP_MESSAGE = 0
 action_states: Dict[int, str] = {}
 
-# --- PERSISTENT QUEUE SYSTEM ---
 def load_persistent_queue() -> list:
     try:
         if os.path.exists("persistent_queue.json"):
@@ -198,7 +202,6 @@ def load_tier_times() -> Dict[str, datetime.datetime]:
 def save_tier_times(times_dict: Dict[str, datetime.datetime]):
     with open("tier_times.json", "w") as f:
         json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
-# -------------------------------
 
 def load_banned_words() -> Set[str]:
     words = set()
@@ -504,12 +507,12 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     elif is_owner_or_mod(user_id):
-        role_title = "👮‍♂️️ Moderator Panel"
+        role_title = "👮‍♂️ Moderator Panel"
         keyboard = [
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -521,7 +524,6 @@ def get_main_menu(user_id: int):
         ]
     return role_title, InlineKeyboardMarkup(keyboard)
 
-# --- EXECUTION FUNCTIONS ---
 async def execute_post_text(bot, job_info):
     try:
         msg = await bot.send_message(chat_id=job_info['chat_id'], text=job_info['text'], read_timeout=20)
@@ -541,7 +543,6 @@ async def execute_post_photo(bot, job_info):
     except Exception as e: print(f"Post Error: {e}")
 
 async def persistent_queue_worker(context: ContextTypes.DEFAULT_TYPE):
-    """Runs every 5 seconds, checks persistent JSON, and posts what is ready"""
     pq = load_persistent_queue()
     if not pq: return
     
@@ -639,13 +640,12 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         ad_last = tier_times.get('ad_global', now_tz)
         if ad_last < now_tz: ad_last = now_tz
         queue_start = max(now_tz, ad_last, now_tz + datetime.timedelta(seconds=base_delay))
-        queue_duration = 120 # Fixed 2 minutes for all ads
+        queue_duration = 120
         scheduled_time = queue_start + datetime.timedelta(seconds=queue_duration)
         tier_times['ad_global'] = scheduled_time
         save_tier_times(tier_times)
         final_delay = (scheduled_time - now_tz).total_seconds()
         assigned_tier = 'ad'
-        
     else:
         if is_privileged or current_tier == 'club':
             final_delay = 0 
@@ -736,7 +736,6 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         post_record = query_post_history(msg_id)
         
-        # Safety filter
         if post_record['user_id'] is None:
             await update.message.reply_text("❌ <b>Action Rejected</b>\nThis message cannot be deleted by the bot because it was either posted manually by an Admin or it is too old to be in the bot's history logs.", parse_mode='HTML')
             return
@@ -996,7 +995,7 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_tier_times({})
     await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
 
-async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1030,7 +1029,7 @@ async def button_gift_subscription(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
-async def button_revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
@@ -1262,7 +1261,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"👥 <b>Total Users:</b> <code>{len(load_known_users())}</code>\n"
             f"✅ <b>Agreed Users (V2):</b> <code>{len(load_agreed_users())}</code>\n"
             f"🚫 <b>Banned Users:</b> <code>{len(load_banned_users())}</code>\n"
-            f"👮‍♂️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
+            f"👮‍♂️️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
             f"⏳ <b>Uptime:</b> <code>{uptime_str}</code>\n\n"
             f"<b>Feature Status:</b>\n"
             f"🔗 Links: {'✅ Enabled' if LINKS_ENABLED else '❌ Disabled'}\n"
@@ -1348,7 +1347,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         txt = "🚫 <b>Ban Management (Owner Only)</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
-            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+            [InlineKeyboardButton("◀️️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
@@ -1356,7 +1355,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not is_owner_or_mod(user_id): return
         txt = "⏳ <b>Timeout Management</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏱️️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
+            [InlineKeyboardButton("⏱️ Timeout User", callback_data='trig_timeout'), InlineKeyboardButton("✅ Remove Timeout", callback_data='trig_rmtimeout')],
             [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
@@ -1395,7 +1394,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>\n\nType /cancel to abort.",
-            'trig_setautoreply': "✏️️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
+            'trig_setautoreply': "✏️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
             'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 tier1 14</code>\n\nType /cancel to abort.",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>\n\nType /cancel to abort.",
             'trig_forcepost': "🚀 <b>Force Post Pending Items</b>\nHow many items would you like to bypass the queue and post instantly?\n<i>Example:</i> <code>5</code>\n\nType /cancel to abort."
@@ -1424,8 +1423,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'trig_addword': success = await add_banned_word(update, context)
         elif state == 'trig_rmword': success = await remove_banned_word(update, context)
         elif state == 'trig_settime': success = await set_time(update, context)
-        elif state == 'trig_gift': success = await button_gift_subscription(update, context)
-        elif state == 'trig_revoke': success = await button_revoke_subscription(update, context)
+        elif state == 'trig_gift': success = await gift_subscription(update, context)
+        elif state == 'trig_revoke': success = await revoke_subscription(update, context)
         elif state == 'trig_setautoreply': 
             global AUTO_REPLY_TEXT
             AUTO_REPLY_TEXT = update.message.text
