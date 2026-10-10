@@ -545,7 +545,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -737,6 +737,8 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
         await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your {post_category.lower()} is queued for {est_time_str}.")
 
+# --- ADMIN COMMAND FUNCTIONS ---
+
 async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
     user = update.message.from_user
@@ -821,7 +823,7 @@ async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         mods.add(target)
         with open("moderators.txt", "w", encoding="utf-8") as f:
             for m in mods: f.write(f"{m}\n")
-        await update.message.reply_text(f"👮‍♂️️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
+        await update.message.reply_text(f"👮‍♂️ User <code>{target}</code> is now a Moderator.", parse_mode='HTML')
         await log_admin_action(context, "Add Moderator", update.message.from_user, target, "Promoted to moderator")
         return True
     except (IndexError, ValueError):
@@ -1105,6 +1107,39 @@ async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <reason></code>\nExample: <code>123456789 Rule violation</code>\n\nType /cancel to abort.", parse_mode='HTML')
         return False
 
+async def force_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not is_owner(update.message.from_user.id): return False
+    try:
+        count_to_post = int(context.args[0])
+        if count_to_post <= 0: raise ValueError
+        
+        pq = load_persistent_queue()
+        if not pq:
+            await update.message.reply_text("The queue is currently empty.")
+            return True
+            
+        pq.sort(key=lambda x: x.get('scheduled_time', 0))
+        to_post = pq[:count_to_post]
+        remaining = pq[count_to_post:]
+        
+        remaining = recalculate_queues(remaining)
+        save_persistent_queue(remaining)
+        
+        await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
+        
+        for job in to_post:
+            if job['type'] == 'text':
+                await execute_post_text(context.bot, job)
+            else:
+                await execute_post_photo(context.bot, job)
+            await asyncio.sleep(0.5)
+            
+        await update.message.reply_text(f"✅ Successfully force posted {len(to_post)} items!")
+        return True
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send a valid number.\nExample: <code>5</code>\n\nType /cancel to abort.", parse_mode='HTML')
+        return False
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return AWAITING_HELP_MESSAGE
     user_id = update.message.from_user.id
@@ -1384,7 +1419,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         txt = "🚫 <b>Ban Management (Owner Only)</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
-            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+            [InlineKeyboardButton("◀ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
@@ -1431,7 +1466,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>\n\nType /cancel to abort.",
-            'trig_setautoreply': "✏️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
+            'trig_setautoreply': "✏ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
             'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 tier1 14</code>\n\nType /cancel to abort.",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>\n\nType /cancel to abort.",
             'trig_forcepost': "🚀 <b>Force Post Pending Items</b>\nHow many items would you like to bypass the queue and post instantly?\n<i>Example:</i> <code>5</code>\n\nType /cancel to abort."
@@ -1446,9 +1481,45 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return
 
+    text_stripped = update.message.text.strip()
+    
+    # --- COMMAND INTERCEPTOR SAFETY NET ---
+    # Prevents moderators from accidentally posting administrative commands as confessions
+    if is_owner_or_mod(user_id):
+        test_text = text_stripped
+        if test_text.startswith('/'): test_text = test_text[1:]
+        parts = test_text.split()
+        first_word = parts[0].lower() if parts else ""
+        
+        admin_commands = {
+            'timeout': timeout_user,
+            'untimeout': remove_timeout,
+            'ban': ban_user,
+            'unban': unban_user,
+            'addmod': add_mod,
+            'removemod': remove_mod,
+            'addban': add_banned_word,
+            'removeban': remove_banned_word,
+            'settime': set_time,
+            'gift': gift_subscription,
+            'revoke': revoke_subscription,
+            'clearqueue': clear_queue,
+            'clearallqueue': clear_all_queue,
+            'broadcast': broadcast,
+            'forcepost': force_post
+        }
+        
+        if first_word in admin_commands:
+            context.args = parts[1:]
+            if user_id in action_states:
+                del action_states[user_id]
+            await admin_commands[first_word](update, context)
+            return
+    # --------------------------------------
+
     if user_id in action_states:
         state = action_states[user_id]
-        context.args = update.message.text.split()
+        context.args = text_stripped.split()
         success = False
         
         if state == 'trig_ban': success = await ban_user(update, context)
@@ -1469,42 +1540,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Auto-reply message updated successfully!")
             success = True
         elif state == 'trig_forcepost':
-            try:
-                count_to_post = int(context.args[0])
-                if count_to_post <= 0: raise ValueError
-                
-                pq = load_persistent_queue()
-                if not pq:
-                    await update.message.reply_text("The queue is currently empty.")
-                else:
-                    pq.sort(key=lambda x: x.get('scheduled_time', 0))
-                    to_post = pq[:count_to_post]
-                    remaining = pq[count_to_post:]
-                    
-                    remaining = recalculate_queues(remaining)
-                    save_persistent_queue(remaining)
-                    
-                    await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
-                    
-                    for job in to_post:
-                        if job['type'] == 'text':
-                            await execute_post_text(context.bot, job)
-                        else:
-                            await execute_post_photo(context.bot, job)
-                        await asyncio.sleep(0.5)
-                        
-                    await update.message.reply_text(f"✅ Successfully force posted {len(to_post)} items!")
-                success = True
-            except (IndexError, ValueError):
-                await update.message.reply_text("❌ <b>Invalid format.</b> Send a valid number.\nExample: <code>5</code>\n\nType /cancel to abort.", parse_mode='HTML')
-                success = False
+            success = await force_post(update, context)
             
         if success:
             del action_states[user_id]
         return
 
-    text_stripped = update.message.text.strip()
-    
     if text_stripped.lower() == 'delete':
         is_privileged = is_owner_or_mod(user_id)
         if not is_privileged:
@@ -1575,7 +1616,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     try:
-        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Tier-Based Queues. Started at {now_str}")
+        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Command Interceptor. Started at {now_str}")
     except Exception: pass
 
 def main():
@@ -1603,6 +1644,7 @@ def main():
     application.add_handler(CommandHandler("gift", gift_subscription))
     application.add_handler(CommandHandler("clearqueue", clear_queue))
     application.add_handler(CommandHandler("clearallqueue", clear_all_queue))
+    application.add_handler(CommandHandler("forcepost", force_post))
 
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler('help', help_command)],
