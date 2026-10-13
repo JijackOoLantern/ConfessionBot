@@ -485,10 +485,12 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
     display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
     safe_name = html.escape(str(job_info['user_name']))
     safe_uid = html.escape(str(job_info['user_id']))
+    
     category = job_info.get('category', 'Confession')
+    emoji = "✏️" if category == 'Confession' else "🛒"
     
     log_message = (
-        f"<b>New {content_type} {category} Log</b>\n\n"
+        f"<b>New {content_type} {emoji} {category} Log</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
         f"<b>Type:</b> {category}\n"
         f"<b>Name:</b> {safe_name}\n"
@@ -500,9 +502,12 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
 
 def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     safe_uid = html.escape(str(job_info['user_id']))
+    
     category = job_info.get('category', 'Confession')
+    emoji = "✏️" if category == 'Confession' else "🛒"
+    
     log_message = (
-        f"<b>New {content_type} {category} Log (Moderator View)</b>\n\n"
+        f"<b>New {content_type} {emoji} {category} Log (Moderator View)</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
         f"<b>Type:</b> {category}\n\n"
     )
@@ -545,7 +550,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -736,8 +741,6 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     else:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
         await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your {post_category.lower()} is queued for {est_time_str}.")
-
-# --- ADMIN COMMAND FUNCTIONS ---
 
 async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -947,13 +950,15 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
         duration_str = format_duration(minutes * 60)
         await update.message.reply_text(f"⏳ User <code>{target_id}</code> timed out for {duration_str}.\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
         
-        str_id = str(target_id)
-        masked_id = str_id[:4] + "*" * (len(str_id) - 4)
-        await context.bot.send_message(
-            chat_id=CHANNEL_ID,
-            text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for {duration_str}.\n<b>Reason:</b> {html.escape(reason)}",
-            parse_mode='HTML'
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=target_id,
+                text=f"📢 <b>Timeout Notice</b>\nYou have been timed out for {duration_str}.\n<b>Reason:</b> {html.escape(reason)}\n\n💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>",
+                parse_mode='HTML'
+            )
+        except Exception:
+            pass
+            
         await log_admin_action(context, "Timeout", user, target_id, f"{reason} (Cleared {cleared_count} pending posts)", duration_str)
         return True
     except (IndexError, ValueError):
@@ -1466,7 +1471,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>\n\nType /cancel to abort.",
             'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>\n\nType /cancel to abort.",
-            'trig_setautoreply': "✏ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
+            'trig_setautoreply': "✏️ <b>Set Auto-Reply</b>\nPlease send the new auto-reply message you want the bot to say.\n\nType /cancel to abort.",
             'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 tier1 14</code>\n\nType /cancel to abort.",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>\n\nType /cancel to abort.",
             'trig_forcepost': "🚀 <b>Force Post Pending Items</b>\nHow many items would you like to bypass the queue and post instantly?\n<i>Example:</i> <code>5</code>\n\nType /cancel to abort."
@@ -1560,13 +1565,15 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_persistent_queue(pq)
             
             await update.message.reply_text(f"⚠️ <b>Timeout Applied (1 Minute)</b>\n\nYou typed 'delete'. To delete a confession, you must forward the actual message from the channel here.\n\n{GUIDE_TEXT}", parse_mode='HTML')
-            str_id = str(user_id)
-            masked_id = str_id[:4] + "*" * (len(str_id) - 4)
-            await context.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=f"📢 <b>Timeout Notice</b>\nUser <code>{masked_id}</code> has been timed out for 1m.\n<b>Reason:</b> Invalid deletion attempt.",
-                parse_mode='HTML'
-            )
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📢 <b>Timeout Notice</b>\nYou have been timed out for 1 minute.\n<b>Reason:</b> Invalid deletion attempt.\n\n💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>",
+                    parse_mode='HTML'
+                )
+            except Exception:
+                pass
+                
             await log_admin_action(context, "Timeout (Auto)", "System", user_id, "Invalid deletion attempt ('delete')", "1 minute")
             return
         else:
