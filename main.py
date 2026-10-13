@@ -490,7 +490,7 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
     emoji = "✏️" if category == 'Confession' else "🛒"
     
     log_message = (
-        f"<b>New {content_type} {emoji} {category} Log</b>\n\n"
+        f"<b>{emoji} New {content_type} {category} Log {emoji}</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
         f"<b>Type:</b> {category}\n"
         f"<b>Name:</b> {safe_name}\n"
@@ -507,7 +507,7 @@ def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_con
     emoji = "✏️" if category == 'Confession' else "🛒"
     
     log_message = (
-        f"<b>New {content_type} {emoji} {category} Log (Moderator View)</b>\n\n"
+        f"<b>{emoji} New {content_type} {category} Log (Moderator View) {emoji}</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
         f"<b>Type:</b> {category}\n\n"
     )
@@ -1424,7 +1424,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         txt = "🚫 <b>Ban Management (Owner Only)</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔨 Ban User", callback_data='trig_ban'), InlineKeyboardButton("✅ Unban User", callback_data='trig_unban')],
-            [InlineKeyboardButton("◀ Back", callback_data='menu_back')]
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
         ])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
@@ -1488,8 +1488,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text_stripped = update.message.text.strip()
     
-    # --- COMMAND INTERCEPTOR SAFETY NET ---
-    # Prevents moderators from accidentally posting administrative commands as confessions
     if is_owner_or_mod(user_id):
         test_text = text_stripped
         if test_text.startswith('/'): test_text = test_text[1:]
@@ -1520,7 +1518,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 del action_states[user_id]
             await admin_commands[first_word](update, context)
             return
-    # --------------------------------------
 
     if user_id in action_states:
         state = action_states[user_id]
@@ -1545,7 +1542,35 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Auto-reply message updated successfully!")
             success = True
         elif state == 'trig_forcepost':
-            success = await force_post(update, context)
+            try:
+                count_to_post = int(context.args[0])
+                if count_to_post <= 0: raise ValueError
+                
+                pq = load_persistent_queue()
+                if not pq:
+                    await update.message.reply_text("The queue is currently empty.")
+                else:
+                    pq.sort(key=lambda x: x.get('scheduled_time', 0))
+                    to_post = pq[:count_to_post]
+                    remaining = pq[count_to_post:]
+                    
+                    remaining = recalculate_queues(remaining)
+                    save_persistent_queue(remaining)
+                    
+                    await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
+                    
+                    for job in to_post:
+                        if job['type'] == 'text':
+                            await execute_post_text(context.bot, job)
+                        else:
+                            await execute_post_photo(context.bot, job)
+                        await asyncio.sleep(0.5)
+                        
+                    await update.message.reply_text(f"✅ Successfully force posted {len(to_post)} items!")
+                success = True
+            except (IndexError, ValueError):
+                await update.message.reply_text("❌ <b>Invalid format.</b> Send a valid number.\nExample: <code>5</code>\n\nType /cancel to abort.", parse_mode='HTML')
+                success = False
             
         if success:
             del action_states[user_id]
