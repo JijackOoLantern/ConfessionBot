@@ -33,10 +33,7 @@ from telegram.error import BadRequest, TelegramError, NetworkError
 from typing import Set, Dict, Any, Union
 import pytz
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 try:
@@ -46,15 +43,13 @@ try:
     OWNER_ID_STR = os.environ.get('OWNER_ID')
     LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
     MOD_LOG_CHANNEL_ID = os.environ.get('MOD_LOG_CHANNEL_ID') 
-    AD_CHANNEL_ID = os.environ.get('AD_CHANNEL_ID')
     
     required_vars = {
         'BOT_TOKEN': TOKEN,
         'CHANNEL_ID': CHANNEL_ID,
         'OWNER_ID': OWNER_ID_STR,
         'LOG_CHANNEL_ID': LOG_CHANNEL_ID,
-        'MOD_LOG_CHANNEL_ID': MOD_LOG_CHANNEL_ID,
-        'AD_CHANNEL_ID': AD_CHANNEL_ID
+        'MOD_LOG_CHANNEL_ID': MOD_LOG_CHANNEL_ID
     }
     
     missing_vars = [name for name, val in required_vars.items() if not val]
@@ -86,9 +81,7 @@ TIER_CONFIG = {
         'photo_cooldown': 14400,  
         'personal_queue_duration': 120,      
         'delete_cooldown': 60,  
-        'delete_access': 'own',
-        'price': 0,
-        'duration_days': 0
+        'delete_access': 'own'
     },
     'tier1': {
         'name': 'Tier 1 Premium',
@@ -96,9 +89,7 @@ TIER_CONFIG = {
         'photo_cooldown': 14400,  
         'personal_queue_duration': 30,      
         'delete_cooldown': 30,    
-        'delete_access': 'all',
-        'price': 100,             
-        'duration_days': 14       
+        'delete_access': 'all'
     },
     'tier2': {
         'name': 'Tier 2 Premium',
@@ -106,9 +97,7 @@ TIER_CONFIG = {
         'photo_cooldown': 21600,  
         'personal_queue_duration': 60,      
         'delete_cooldown': 60,    
-        'delete_access': 'all',
-        'price': 50,              
-        'duration_days': 14       
+        'delete_access': 'all'
     },
     'club': {
         'name': 'Club/Association Sub',
@@ -116,9 +105,7 @@ TIER_CONFIG = {
         'photo_cooldown': 3600,   
         'personal_queue_duration': 0,      
         'delete_cooldown': 0,     
-        'delete_access': 'own',
-        'price': 200,             
-        'duration_days': 30       
+        'delete_access': 'own'
     }
 }
 
@@ -139,24 +126,22 @@ def format_duration(seconds: Union[int, float]) -> str:
     return " ".join(parts)
 
 GUIDE_TEXT = (
-    "<b>UiTM Tapah Confession & Marketplace Bot Guide.</b>\n\n"
+    "<b>✏️ UiTM Tapah Confession Bot Guide ✏️</b>\n\n"
     "<u>Posts & Tier-Based Queue</u>\n"
     "- Confessions are queued independently by subscription tier. Basic users do not wait behind Premium users.\n"
     "- Basic Level waits 2 minutes. Tier 1 waits 30 seconds. Tier 2 waits 1 minute. Club posts are Instant.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
-    "- Ads are STRICTLY posted to the Marketplace channel.\n"
-    "- Ads have a dedicated global queue of 2 minutes, regardless of tier. This prevents marketplace posts from slowing confession queues.\n"
-    "- <b>Ad Requirements:</b> An ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
-    "- <b>Strict Penalty:</b> Posting a regular confession inside the Ad channel, OR posting an advertisement inside the Confession channel, will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
+    "- <b>DO NOT post ads here.</b> All ads must go to our dedicated Marketplace bot: <b>@MarketTapahBot</b>.\n"
+    "- <b>Strict Penalty:</b> Posting an advertisement inside this Confession channel will result in an immediate 1-WEEK (10080 minutes) timeout.\n\n"
     "<u>Mature Content 🔞</u>\n"
     "- Promoting explicit content will result in an instant and permanent ban. No appeals.\n\n"
     "<u>Deletion & Queue Management</u>\n"
-    "- To delete a LIVE post, forward the message to the bot from either channel.\n"
+    "- To delete a LIVE post, forward the message to the bot from the channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
     "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
     "<u>Subscriptions & Timeouts</u>\n"
     "- Optional Subscriptions improve bot interaction and queue times. Non-refundable.\n"
-    "- <b>Clubs/Associations must apply for approval via the Store bot.</b> Once approved, you can purchase the Club Tier for 200 Stars. Limited to 2 accounts per club strictly for club-related posts. Misuse leads to immediate revocation.\n"
+    "- Clubs/Associations must apply for approval via the Store bot.\n"
     "- Timed punishments are imposed for rule-breaking. Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass for 200 Stars in the Subscription Store.\n\n"
     "<u>Developer/Moderator (Dev/Mod)</u>\n"
     "- Any decision made by the Dev and Mod is with their own level of judgement and should not be questioned.\n"
@@ -164,9 +149,10 @@ GUIDE_TEXT = (
 )
 
 TNC_TEXT = (
-    "👋 Welcome to Tapah Confession & Marketplace Bot!\n\n"
-    "By tapping below, you acknowledge and agree to fully abide by the updated terms, structural rules, "
-    "Marketplace guidelines, and strict timeout regulations outlined in our operational guide."
+    "👋 Welcome to Tapah Confession Bot!\n\n"
+    "<b>NOTICE: We now have a dedicated Marketplace Bot!</b>\n"
+    "If you want to post an Advertisement, you must use @MarketTapahBot.\n\n"
+    "By tapping below, you acknowledge and agree to fully abide by the updated rules, and you understand that posting an ad here will result in a 1-week timeout."
 )
 
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
@@ -174,68 +160,10 @@ user_link_cooldowns: Dict[int, datetime.datetime] = {}
 user_photo_cooldowns: Dict[int, datetime.datetime] = {} 
 auto_reply_pauses: Dict[int, float] = {}
 pending_submissions: Dict[int, Dict[str, Any]] = {}
-
-AWAITING_HELP_MESSAGE = 0
 action_states: Dict[int, str] = {}
+AWAITING_HELP_MESSAGE = 0
 
-def load_persistent_queue() -> list:
-    try:
-        if os.path.exists("persistent_queue.json"):
-            with open("persistent_queue.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception: pass
-    return []
-
-def save_persistent_queue(queue_list: list):
-    with open("persistent_queue.json", "w", encoding="utf-8") as f:
-        json.dump(queue_list, f, ensure_ascii=False, indent=4)
-
-def load_tier_times() -> Dict[str, datetime.datetime]:
-    try:
-        if os.path.exists("tier_times.json"):
-            with open("tier_times.json", "r") as f:
-                data = json.load(f)
-                return {k: datetime.datetime.fromtimestamp(v, TIMEZONE) for k, v in data.items()}
-    except: pass
-    return {}
-
-def save_tier_times(times_dict: Dict[str, datetime.datetime]):
-    with open("tier_times.json", "w") as f:
-        json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
-
-def recalculate_queues(pq_list: list) -> list:
-    """Collapses gaps in the queue whenever items are forcefully posted or deleted."""
-    now_tz = datetime.datetime.now(TIMEZONE)
-    now_ts = now_tz.timestamp()
-    base_delay = get_seconds_until_active() if not is_bot_active() else 0
-    start_ts = now_ts + base_delay
-    
-    new_tier_times = {}
-    for job in pq_list:
-        t = job.get('tier', 'basic')
-        if t == 'ad': q_dur = 120
-        elif t == 'club': q_dur = 0
-        else: q_dur = TIER_CONFIG.get(t, TIER_CONFIG['basic'])['personal_queue_duration']
-        
-        queue_start = max(start_ts, new_tier_times.get(t, start_ts))
-        new_sched = queue_start + q_dur
-        job['scheduled_time'] = new_sched
-        new_tier_times[t] = new_sched
-        
-    current_tier_times = load_tier_times()
-    for t_key in list(current_tier_times.keys()):
-        if t_key in new_tier_times:
-            current_tier_times[t_key] = datetime.datetime.fromtimestamp(new_tier_times[t_key], TIMEZONE)
-        else:
-            current_tier_times[t_key] = now_tz
-            
-    for t_key, sched in new_tier_times.items():
-        if t_key not in current_tier_times:
-            current_tier_times[t_key] = datetime.datetime.fromtimestamp(sched, TIMEZONE)
-            
-    save_tier_times(current_tier_times)
-    return pq_list
-
+# --- SHARED MODERATION FILES (USED BY BOTH BOTS) ---
 def load_banned_words() -> Set[str]:
     words = set()
     try:
@@ -288,11 +216,24 @@ def load_moderators() -> Set[int]:
     except: pass
     return mods
 
+def get_user_tier(uid: int) -> str:
+    if uid == OWNER_ID: return 'tier1' 
+    try:
+        if os.path.exists("active_subscriptions.txt"):
+            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        user_str, tier, expiry_str = line.strip().split(',')
+                        if int(user_str) == uid and float(expiry_str) > time.time(): return tier
+    except: pass
+    return 'basic'
+
+# --- MAIN BOT SPECIFIC FILES ---
 def load_agreed_users() -> Set[int]:
     users = set()
     try:
-        if os.path.exists("agreed_users_v2.txt"):
-            with open("agreed_users_v2.txt", "r", encoding="utf-8") as f:
+        if os.path.exists("agreed_users_main.txt"):
+            with open("agreed_users_main.txt", "r", encoding="utf-8") as f:
                 users = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return users
@@ -300,13 +241,13 @@ def load_agreed_users() -> Set[int]:
 def save_agreed_user(uid):
     users = load_agreed_users()
     if uid not in users:
-        with open("agreed_users_v2.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
+        with open("agreed_users_main.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
 
 def load_known_users() -> Set[int]:
     ids = set()
     try:
-        if os.path.exists("users.txt"):
-            with open("users.txt", "r", encoding="utf-8") as f:
+        if os.path.exists("users_main.txt"):
+            with open("users_main.txt", "r", encoding="utf-8") as f:
                 ids = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return ids
@@ -314,7 +255,88 @@ def load_known_users() -> Set[int]:
 def save_user(uid):
     users = load_known_users()
     if uid not in users:
-        with open("users.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
+        with open("users_main.txt", "a", encoding="utf-8") as f: f.write(f"{uid}\n")
+
+def load_persistent_queue() -> list:
+    try:
+        if os.path.exists("persistent_queue_main.json"):
+            with open("persistent_queue_main.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+    except: pass
+    return []
+
+def save_persistent_queue(queue_list: list):
+    with open("persistent_queue_main.json", "w", encoding="utf-8") as f:
+        json.dump(queue_list, f, ensure_ascii=False, indent=4)
+
+def load_tier_times() -> Dict[str, datetime.datetime]:
+    try:
+        if os.path.exists("tier_times_main.json"):
+            with open("tier_times_main.json", "r") as f:
+                data = json.load(f)
+                return {k: datetime.datetime.fromtimestamp(v, TIMEZONE) for k, v in data.items()}
+    except: pass
+    return {}
+
+def save_tier_times(times_dict: Dict[str, datetime.datetime]):
+    with open("tier_times_main.json", "w") as f:
+        json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
+
+def load_ad_reminders() -> Dict[str, int]:
+    try:
+        if os.path.exists("ad_reminders.json"):
+            with open("ad_reminders.json", "r") as f:
+                return json.load(f)
+    except: pass
+    return {}
+
+def save_ad_reminders(data: Dict[str, int]):
+    with open("ad_reminders.json", "w") as f:
+        json.dump(data, f)
+
+def append_post_history(message_id: int, user_id: int):
+    with open("post_history_main.txt", "a", encoding="utf-8") as f:
+        f.write(f"{message_id},{user_id},0\n")
+
+def query_post_history(message_id: int) -> Dict[str, Any]:
+    try:
+        if os.path.exists("post_history_main.txt"):
+            with open("post_history_main.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        msg_id, uid, _ = line.strip().split(',')
+                        if int(msg_id) == message_id:
+                            return {'user_id': int(uid)}
+    except: pass
+    return {'user_id': None}
+
+def recalculate_queues(pq_list: list) -> list:
+    now_tz = datetime.datetime.now(TIMEZONE)
+    now_ts = now_tz.timestamp()
+    base_delay = get_seconds_until_active() if not is_bot_active() else 0
+    start_ts = now_ts + base_delay
+    new_tier_times = {}
+    for job in pq_list:
+        t = job.get('tier', 'basic')
+        q_dur = TIER_CONFIG.get(t, TIER_CONFIG['basic'])['personal_queue_duration'] if t != 'club' else 0
+        queue_start = max(start_ts, new_tier_times.get(t, start_ts))
+        new_sched = queue_start + q_dur
+        job['scheduled_time'] = new_sched
+        new_tier_times[t] = new_sched
+        
+    current_tier_times = load_tier_times()
+    for t_key in list(current_tier_times.keys()):
+        if t_key in new_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(new_tier_times[t_key], TIMEZONE)
+        else:
+            current_tier_times[t_key] = now_tz
+            
+    for t_key, sched in new_tier_times.items():
+        if t_key not in current_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(sched, TIMEZONE)
+            
+    save_tier_times(current_tier_times)
+    return pq_list
 
 def load_time_settings():
     global START_HOUR, END_HOUR
@@ -331,97 +353,31 @@ def save_time_settings():
 
 load_time_settings()
 
-def load_autoreply_settings():
-    global AUTO_REPLY_ENABLED, AUTO_REPLY_TEXT
-    try:
-        if os.path.exists("autoreply_status.txt"):
-            with open("autoreply_status.txt", "r", encoding="utf-8") as f:
-                AUTO_REPLY_ENABLED = f.read().strip() == "True"
-        if os.path.exists("autoreply_text.txt"):
-            with open("autoreply_text.txt", "r", encoding="utf-8") as f:
-                AUTO_REPLY_TEXT = f.read().strip()
-    except: pass
-
-def save_autoreply_settings():
-    with open("autoreply_status.txt", "w", encoding="utf-8") as f: f.write(str(AUTO_REPLY_ENABLED))
-    with open("autoreply_text.txt", "w", encoding="utf-8") as f: f.write(AUTO_REPLY_TEXT)
-
-load_autoreply_settings()
-
-def get_user_tier(uid: int) -> str:
-    if uid == OWNER_ID: return 'tier1' 
-    try:
-        if os.path.exists("active_subscriptions.txt"):
-            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip() and "," in line:
-                        user_str, tier, expiry_str = line.strip().split(',')
-                        if int(user_str) == uid and float(expiry_str) > time.time(): return tier
-    except: pass
-    return 'basic'
-
-def append_post_history(message_id: int, user_id: int):
-    with open("post_history.txt", "a", encoding="utf-8") as f:
-        f.write(f"{message_id},{user_id},0\n")
-
-def query_post_history(message_id: int) -> Dict[str, Any]:
-    try:
-        if os.path.exists("post_history.txt"):
-            with open("post_history.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip() and "," in line:
-                        msg_id, uid, _ = line.strip().split(',')
-                        if int(msg_id) == message_id:
-                            return {'user_id': int(uid)}
-    except: pass
-    return {'user_id': None}
-
-def is_owner(uid: int) -> bool:
-    return uid == OWNER_ID
-
-def is_owner_or_mod(uid: int) -> bool:
-    return uid == OWNER_ID or uid in load_moderators()
+def is_owner(uid: int) -> bool: return uid == OWNER_ID
+def is_owner_or_mod(uid: int) -> bool: return uid == OWNER_ID or uid in load_moderators()
 
 async def log_admin_action(context: ContextTypes.DEFAULT_TYPE, action_type: str, executor, target_id: int, reason: str, duration: str = None):
     executor_name = html.escape(str(getattr(executor, 'first_name', 'System')))
     executor_uid = getattr(executor, 'id', 'System')
-    raw_user = getattr(executor, 'username', None)
-    executor_user = f"@{html.escape(raw_user)}" if raw_user else "No username"
-
-    owner_log = (
-        f"🛡️ <b>ADMIN ACTION: {action_type.upper()}</b>\n\n"
-        f"👤 <b>Target User ID:</b> <code>{target_id}</code>\n"
-        f"👮 <b>Executed By:</b> {executor_name} (<code>{executor_uid}</code> | {executor_user})\n"
-    )
-    if duration:
-        owner_log += f"⏳ <b>Duration:</b> {duration}\n"
+    
+    owner_log = f"🛡️ <b>ADMIN ACTION: {action_type.upper()}</b>\n\n👤 <b>Target ID:</b> <code>{target_id}</code>\n👮 <b>By:</b> {executor_name} (<code>{executor_uid}</code>)\n"
+    if duration: owner_log += f"⏳ <b>Duration:</b> {duration}\n"
     owner_log += f"📝 <b>Reason:</b> {html.escape(reason)}"
 
-    mod_log = (
-        f"🛡️ <b>MODERATION ACTION: {action_type.upper()}</b>\n\n"
-        f"👤 <b>Target User ID:</b> <code>{target_id}</code>\n"
-        f"👮 <b>Executed By:</b> <code>{executor_uid}</code>\n"
-    )
-    if duration:
-        mod_log += f"⏳ <b>Duration:</b> {duration}\n"
+    mod_log = f"🛡️ <b>MODERATION ACTION: {action_type.upper()}</b>\n\n👤 <b>Target ID:</b> <code>{target_id}</code>\n👮 <b>By:</b> <code>{executor_uid}</code>\n"
+    if duration: mod_log += f"⏳ <b>Duration:</b> {duration}\n"
     mod_log += f"📝 <b>Reason:</b> {html.escape(reason)}"
 
-    try:
-        await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log, parse_mode='HTML')
-    except Exception as e:
-        print(f"Failed to send owner admin log: {e}")
-
-    try:
-        await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log, parse_mode='HTML')
-    except Exception as e:
-        print(f"Failed to send mod admin log: {e}")
+    try: await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log, parse_mode='HTML')
+    except: pass
+    try: await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log, parse_mode='HTML')
+    except: pass
 
 async def is_user_restricted(user_id: int, update: Update=None, context: ContextTypes.DEFAULT_TYPE=None) -> bool:
     if is_owner_or_mod(user_id): return False 
-    
-    banned_users = load_banned_users()
-    if user_id in banned_users:
-        msg = f"🚫 You are permanently banned.\n<b>Reason:</b> {html.escape(banned_users[user_id])}"
+    banned = load_banned_users()
+    if user_id in banned:
+        msg = f"🚫 You are permanently banned.\n<b>Reason:</b> {html.escape(banned[user_id])}"
         if update: await update.message.reply_text(msg, parse_mode='HTML')
         elif context: await context.bot.send_message(user_id, msg, parse_mode='HTML')
         return True
@@ -430,14 +386,9 @@ async def is_user_restricted(user_id: int, update: Update=None, context: Context
     if user_id in timeouts:
         expiry = timeouts[user_id]['expiry']
         reason = timeouts[user_id]['reason']
-        remaining = expiry - time.time()
-        if remaining > 0:
-            formatted_rem = format_duration(remaining)
-            msg = (
-                f"⏳ You are in timeout. Please wait another {formatted_rem}.\n"
-                f"<b>Reason:</b> {html.escape(reason)}\n\n"
-                f"💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>"
-            )
+        rem = expiry - time.time()
+        if rem > 0:
+            msg = f"⏳ You are in timeout. Please wait another {format_duration(rem)}.\n<b>Reason:</b> {html.escape(reason)}\n\n💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>"
             if update: await update.message.reply_text(msg, parse_mode='HTML')
             elif context: await context.bot.send_message(user_id, msg, parse_mode='HTML')
             return True
@@ -454,8 +405,7 @@ def format_time(hour_24: int) -> str:
 
 def is_bot_active() -> bool:
     now = datetime.datetime.now(TIMEZONE)
-    current_hour = now.hour
-    if START_HOUR <= current_hour or current_hour < END_HOUR: return True
+    if START_HOUR <= now.hour or now.hour < END_HOUR: return True
     return False
 
 def get_seconds_until_active() -> float:
@@ -475,24 +425,15 @@ def check_for_banned_words(text: str) -> bool:
             if word in text_lower: return True
     return False
 
-def contains_link_text(text: str) -> bool:
-    if not text: return False
-    text_lower = text.lower()
-    return "http://" in text_lower or "https://" in text_lower or "www." in text_lower
-
 def create_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     raw_username = job_info.get('username')
     display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
     safe_name = html.escape(str(job_info['user_name']))
     safe_uid = html.escape(str(job_info['user_id']))
     
-    category = job_info.get('category', 'Confession')
-    emoji = "✏️" if category == 'Confession' else "🛒"
-    
     log_message = (
-        f"<b>{emoji} New {content_type} {category} Log {emoji}</b>\n\n"
+        f"<b>✏️ New {content_type} Confession Log ✏️</b>\n\n"
         f"<b>User ID:</b> <code>{safe_uid}</code>\n"
-        f"<b>Type:</b> {category}\n"
         f"<b>Name:</b> {safe_name}\n"
         f"<b>Username:</b> {display_username}\n\n"
     )
@@ -502,23 +443,13 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
 
 def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     safe_uid = html.escape(str(job_info['user_id']))
-    
-    category = job_info.get('category', 'Confession')
-    emoji = "✏️" if category == 'Confession' else "🛒"
-    
     log_message = (
-        f"<b>{emoji} New {content_type} {category} Log (Moderator View) {emoji}</b>\n\n"
-        f"<b>User ID:</b> <code>{safe_uid}</code>\n"
-        f"<b>Type:</b> {category}\n\n"
+        f"<b>✏️ New {content_type} Confession Log (Moderator) ✏️</b>\n\n"
+        f"<b>User ID:</b> <code>{safe_uid}</code>\n\n"
     )
     content_to_log = text_content or job_info.get('caption')
     if content_to_log: log_message += f"<b>Content:</b>\n{html.escape(content_to_log)}"
-    
-    if category == "Advertisement":
-        log_message += f"\n\n<i>Mod Tip: If this is a confession in the Ad channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted confession in Ad channel</code>\n"
-    elif category == "Confession":
-        log_message += f"\n\n<i>Mod Tip: If this is an ad in the Confession channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted ad in Confession channel</code>\n"
-        
+    log_message += f"\n\n<i>Mod Tip: If this is an ad in the Confession channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted ad in Confession channel</code>\n"
     return log_message
 
 def get_tnc_keyboard():
@@ -583,24 +514,17 @@ async def execute_post_photo(bot, job_info):
 async def persistent_queue_worker(context: ContextTypes.DEFAULT_TYPE):
     pq = load_persistent_queue()
     if not pq: return
-    
     now_ts = datetime.datetime.now(TIMEZONE).timestamp()
     jobs_to_run = []
     remaining_jobs = []
-    
     for job in pq:
-        if now_ts >= job['scheduled_time']:
-            jobs_to_run.append(job)
-        else:
-            remaining_jobs.append(job)
-            
+        if now_ts >= job['scheduled_time']: jobs_to_run.append(job)
+        else: remaining_jobs.append(job)
     if jobs_to_run:
         save_persistent_queue(remaining_jobs) 
         for job in jobs_to_run:
-            if job['type'] == 'text':
-                await execute_post_text(context.bot, job)
-            else:
-                await execute_post_photo(context.bot, job)
+            if job['type'] == 'text': await execute_post_text(context.bot, job)
+            else: await execute_post_photo(context.bot, job)
 
 async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not AUTO_REPLY_ENABLED: return
@@ -609,30 +533,24 @@ async def group_auto_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_msg = msg.to_dict()
     is_channel_dm = raw_msg.get('chat', {}).get('is_direct_messages', False)
     if not is_channel_dm: return
-
     chat_id = msg.chat_id
     now = time.time()
-
     if str(msg.from_user.id) == str(OWNER_ID):
         auto_reply_pauses[chat_id] = now + AUTO_REPLY_PAUSE_DURATION
         return
-
     if chat_id in auto_reply_pauses:
         if now < auto_reply_pauses[chat_id]: return  
         else: del auto_reply_pauses[chat_id]  
-
     try: await msg.reply_text(AUTO_REPLY_TEXT)
-    except Exception: pass
+    except: pass
 
-async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], post_category: str, target_chat_id: str):
+async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], target_chat_id: str):
     user_id = user.id
     is_privileged = is_owner_or_mod(user_id)
-    
     if await is_user_restricted(user_id, context=context): return
 
     post_type = submission['type']
     text_to_check = submission['text']
-    
     current_tier = get_user_tier(user_id)
     cfg = TIER_CONFIG[current_tier]
 
@@ -672,39 +590,25 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         base_delay = get_seconds_until_active()
 
     assigned_tier = current_tier
-
-    if post_category == 'Advertisement':
+    if is_privileged or current_tier == 'club':
+        final_delay = 0 
+        scheduled_time = now_tz
+        assigned_tier = 'club'
+    else:
         tier_times = load_tier_times()
-        ad_last = tier_times.get('ad_global', now_tz)
-        if ad_last < now_tz: ad_last = now_tz
-        queue_start = max(now_tz, ad_last, now_tz + datetime.timedelta(seconds=base_delay))
-        queue_duration = 120
+        tier_last_time = tier_times.get(current_tier, now_tz)
+        if tier_last_time < now_tz:
+            tier_last_time = now_tz
+            
+        wake_time = now_tz + datetime.timedelta(seconds=base_delay)
+        queue_start = max(now_tz, tier_last_time, wake_time)
+        
+        queue_duration = cfg['personal_queue_duration']
         scheduled_time = queue_start + datetime.timedelta(seconds=queue_duration)
-        tier_times['ad_global'] = scheduled_time
+        
+        tier_times[current_tier] = scheduled_time
         save_tier_times(tier_times)
         final_delay = (scheduled_time - now_tz).total_seconds()
-        assigned_tier = 'ad'
-    else:
-        if is_privileged or current_tier == 'club':
-            final_delay = 0 
-            scheduled_time = now_tz
-            assigned_tier = 'club'
-        else:
-            tier_times = load_tier_times()
-            tier_last_time = tier_times.get(current_tier, now_tz)
-            if tier_last_time < now_tz:
-                tier_last_time = now_tz
-                
-            wake_time = now_tz + datetime.timedelta(seconds=base_delay)
-            queue_start = max(now_tz, tier_last_time, wake_time)
-            
-            queue_duration = cfg['personal_queue_duration']
-            scheduled_time = queue_start + datetime.timedelta(seconds=queue_duration)
-            
-            tier_times[current_tier] = scheduled_time
-            save_tier_times(tier_times)
-            
-            final_delay = (scheduled_time - now_tz).total_seconds()
     
     new_job = {
         'job_id': f"{time.time()}_{user.id}",
@@ -714,7 +618,7 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
         'user_name': user.first_name,
         'username': user.username,
         'is_immune': False,
-        'category': post_category,
+        'category': 'Confession',
         'type': post_type,
         'tier': assigned_tier,
         'text': text_to_check if post_type == 'text' else None,
@@ -727,20 +631,17 @@ async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submis
     save_persistent_queue(pq)
 
     if final_delay == 0:
-        await context.bot.send_message(user_id, f"✅ {post_category} sent instantly!")
+        await context.bot.send_message(user_id, f"✅ Confession sent instantly!")
     elif base_delay == 0 and final_delay > 0:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
         await context.bot.send_message(
             user_id,
-            f"🕒 <b>{post_category} Queued!</b>\n"
-            f"Wait Time: <b>{format_duration(final_delay)}</b>\n"
-            f"Estimated Post Time: <b>{est_time_str}</b>\n\n"
-            f"💡 <i>Want a better experience? Skip the queue or reduce your wait time by subscribing at {SUB_BOT_URL}</i>",
+            f"🕒 <b>Confession Queued!</b>\nWait Time: <b>{format_duration(final_delay)}</b>\nEstimated Post Time: <b>{est_time_str}</b>\n\n💡 <i>Want a better experience? Skip the queue or reduce your wait time by subscribing at {SUB_BOT_URL}</i>",
             parse_mode='HTML'
         )
     else:
         est_time_str = scheduled_time.strftime('%I:%M:%S %p')
-        await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your {post_category.lower()} is queued for {est_time_str}.")
+        await context.bot.send_message(user_id, f"🌙 Bot is currently in sleep mode. Your confession is queued for {est_time_str}.")
 
 async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -765,17 +666,14 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not target_chat or not msg_id: return
 
     is_channel = (target_chat == str(CHANNEL_ID) or f"@{CHANNEL_ID.lstrip('@')}" == target_chat)
-    is_ad_channel = (target_chat == str(AD_CHANNEL_ID) or f"@{AD_CHANNEL_ID.lstrip('@')}" == target_chat)
 
-    if is_channel or is_ad_channel:
-        actual_target_chat = CHANNEL_ID if is_channel else AD_CHANNEL_ID
+    if is_channel:
         is_privileged = is_owner_or_mod(user_id)
         now = datetime.datetime.now()
-        
         post_record = query_post_history(msg_id)
         
         if post_record['user_id'] is None:
-            await update.message.reply_text("❌ <b>Action Rejected</b>\nThis message cannot be deleted by the bot because it was either posted manually by an Admin or it is too old to be in the bot's history logs.", parse_mode='HTML')
+            await update.message.reply_text("❌ <b>Action Rejected</b>\nThis message cannot be deleted by the bot because it was either posted manually by an Admin or it is too old.", parse_mode='HTML')
             return
 
         current_tier = get_user_tier(user.id)
@@ -793,7 +691,7 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         try:
-            await context.bot.delete_message(chat_id=actual_target_chat, message_id=msg_id)
+            await context.bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
             if not is_privileged: user_delete_cooldowns[user_id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
@@ -804,18 +702,11 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_uid = html.escape(str(user_id))
             safe_content = html.escape(content)
             
-            owner_log_txt = (
-                f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n"
-                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
-            )
+            owner_log_txt = f"🗑 <b>DELETION LOG</b>\n*By:* {safe_user} (<code>{safe_uid}</code>)\n*Username:* {display_username}\n*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log_txt, parse_mode='HTML')
 
-            mod_log_txt = (
-                f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n"
-                f"*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
-            )
+            mod_log_txt = f"🗑 <b>DELETION LOG (Moderator View)</b>\n*By User ID:* <code>{safe_uid}</code>\n*Msg ID:* <code>{msg_id}</code>\n*Original Content:*\n{safe_content}"
             await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log_txt, parse_mode='HTML')
-            
         except Exception as e: await update.message.reply_text(f"❌ Could not delete: {e}")
 
 async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -830,7 +721,7 @@ async def add_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         await log_admin_action(context, "Add Moderator", update.message.from_user, target, "Promoted to moderator")
         return True
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>\nExample: <code>123456789</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>", parse_mode='HTML')
         return False
 
 async def remove_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -845,7 +736,7 @@ async def remove_mod(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
         await log_admin_action(context, "Remove Moderator", update.message.from_user, target, "Demoted from moderator")
         return True
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>\nExample: <code>123456789</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>", parse_mode='HTML')
         return False
 
 async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -860,7 +751,7 @@ async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         await update.message.reply_text(f"✅ Active time updated!\nStart: {format_time(START_HOUR)}\nEnd/Sleep: {format_time(END_HOUR)}")
         return True
     except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><start_hour> <end_hour></code> (0-23)\nExample: <code>21 18</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
+        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><start_hour> <end_hour></code> (0-23)", parse_mode='HTML')
         return False
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -880,9 +771,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.message.from_user
-    if not is_owner(user.id):
-        await update.message.reply_text("❌ Only the Owner/Developer can ban users.")
-        return False
+    if not is_owner(user.id): return False
     try:
         target = int(context.args[0])
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided."
@@ -899,17 +788,13 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         cleared_count = original_len - len(pq)
             
         await update.message.reply_text(f"🚫 User <code>{target}</code> banned.\n<b>Reason:</b> {html.escape(reason)}\n🗑 <b>Cleared {cleared_count} pending posts.</b>", parse_mode='HTML')
-        await log_admin_action(context, "Ban", user, target, f"{reason} (Cleared {cleared_count} pending posts)")
+        await log_admin_action(context, "Ban", user, target, f"{reason} (Cleared {cleared_count} posts)")
         return True
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <reason></code>\nExample: <code>123456789 Spamming channel</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.message.from_user
-    if not is_owner(user.id):
-        await update.message.reply_text("❌ Only the Owner/Developer can unban users.")
-        return False
+    if not is_owner(user.id): return False
     try:
         target = int(context.args[0])
         banned = load_banned_users()
@@ -921,11 +806,9 @@ async def unban_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
             await log_admin_action(context, "Unban", user, target, "Ban lifted")
             return True
         else:
-            await update.message.reply_text(f"⚠️ User <code>{target}</code> is not in the ban list. Send /cancel to abort.", parse_mode='HTML')
+            await update.message.reply_text(f"⚠️ User <code>{target}</code> is not in the ban list.", parse_mode='HTML')
             return False
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>\nExample: <code>123456789</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.message.from_user
@@ -956,14 +839,10 @@ async def timeout_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bo
                 text=f"📢 <b>Timeout Notice</b>\nYou have been timed out for {duration_str}.\n<b>Reason:</b> {html.escape(reason)}\n\n💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>",
                 parse_mode='HTML'
             )
-        except Exception:
-            pass
-            
-        await log_admin_action(context, "Timeout", user, target_id, f"{reason} (Cleared {cleared_count} pending posts)", duration_str)
+        except: pass
+        await log_admin_action(context, "Timeout", user, target_id, f"{reason} (Cleared {cleared_count} posts)", duration_str)
         return True
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <minutes> <reason></code>\nExample: <code>123456789 60 Flooding chat</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.message.from_user
@@ -978,11 +857,9 @@ async def remove_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await log_admin_action(context, "Remove Timeout", user, target_id, "Timeout lifted early")
             return True
         else:
-            await update.message.reply_text(f"⚠️ User <code>{target_id}</code> is not currently in timeout. Send /cancel to abort.", parse_mode='HTML')
+            await update.message.reply_text(f"⚠️ User <code>{target_id}</code> is not currently in timeout.", parse_mode='HTML')
             return False
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id></code>\nExample: <code>123456789</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
@@ -995,9 +872,7 @@ async def add_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             for w in words: f.write(f"{w}\n")
         await update.message.reply_text(f"🚫 Banned word added: <code>{html.escape(word)}</code>", parse_mode='HTML')
         return True
-    except IndexError:
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
@@ -1010,9 +885,7 @@ async def remove_banned_word(update: Update, context: ContextTypes.DEFAULT_TYPE)
             for w in words: f.write(f"{w}\n")
         await update.message.reply_text(f"✅ Banned word removed: <code>{html.escape(word)}</code>", parse_mode='HTML')
         return True
-    except IndexError:
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><word></code>\nExample: <code>badword</code>\n\nOr send /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -1025,15 +898,11 @@ async def clear_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pq = recalculate_queues(pq)
     save_persistent_queue(pq)
     count = original_len - len(pq)
-    
     await update.message.reply_text(f"✅ Cleared {count} of your pending posts from the queue.")
 
 async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
-    if not is_owner_or_mod(update.message.from_user.id): 
-        await update.message.reply_text("❌ Access Denied.")
-        return
-        
+    if not is_owner_or_mod(update.message.from_user.id): return
     save_persistent_queue([])
     save_tier_times({})
     await update.message.reply_text("✅ Master Queue and all Tier Databases have been cleared.")
@@ -1044,40 +913,28 @@ async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         target_uid = int(context.args[0])
         tier_code = context.args[1].lower()
         days = int(context.args[2])
-        
         if tier_code not in TIER_CONFIG or tier_code == 'basic':
-            await update.message.reply_text("❌ Invalid tier code. Valid choices: <code>tier1</code>, <code>tier2</code>, <code>club</code>", parse_mode='HTML')
+            await update.message.reply_text("❌ Invalid tier code.", parse_mode='HTML')
             return False
             
         now = time.time()
         expiry = now + (days * 86400)
-        
         with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
             f.write(f"{target_uid},{tier_code},{expiry}\n")
             
         tier_name = TIER_CONFIG[tier_code]['name']
         await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
         await log_admin_action(context, "Gift Subscription", update.message.from_user, target_uid, f"Gifted {tier_name}", f"{days} days")
-        
-        try:
-            await context.bot.send_message(
-                chat_id=target_uid,
-                text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days. Enjoy your premium privileges!",
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ Gift logged, but user couldn't be notified directly: {e}")
+        try: await context.bot.send_message(chat_id=target_uid, text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days.", parse_mode='HTML')
+        except: pass
         return True
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <tier_code> <days></code>\nExample: <code>123456789 tier1 14</code>\n\nType /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         target_uid = int(context.args[0])
         reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided"
-        
         revoked = False
         remaining_lines = []
         if os.path.exists("active_subscriptions.txt"):
@@ -1085,39 +942,25 @@ async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE
                 for line in f:
                     if line.strip() and "," in line:
                         u_id, tier, expiry = line.strip().split(',')
-                        if int(u_id) == target_uid:
-                            revoked = True
-                        else:
-                            remaining_lines.append(line)
-                            
+                        if int(u_id) == target_uid: revoked = True
+                        else: remaining_lines.append(line)
         if revoked:
-            with open("active_subscriptions.txt", "w", encoding="utf-8") as f:
-                f.writelines(remaining_lines)
-            
+            with open("active_subscriptions.txt", "w", encoding="utf-8") as f: f.writelines(remaining_lines)
             await update.message.reply_text(f"✅ Subscription for user <code>{target_uid}</code> has been REVOKED.", parse_mode='HTML')
             await log_admin_action(context, "Revoke Subscription", update.message.from_user, target_uid, reason)
-            try:
-                await context.bot.send_message(
-                    chat_id=target_uid,
-                    text=f"⚠️ <b>Subscription Revoked</b>\n\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}",
-                    parse_mode='HTML'
-                )
-            except Exception as e:
-                await update.message.reply_text(f"⚠️ Could not notify user {target_uid} directly: {e}")
+            try: await context.bot.send_message(chat_id=target_uid, text=f"⚠️ <b>Subscription Revoked</b>\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
+            except: pass
             return True
         else:
-            await update.message.reply_text(f"⚠️ No active subscription found for user <code>{target_uid}</code>.", parse_mode='HTML')
+            await update.message.reply_text(f"⚠️ No active subscription found.", parse_mode='HTML')
             return False
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send: <code><user_id> <reason></code>\nExample: <code>123456789 Rule violation</code>\n\nType /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def force_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if not is_owner(update.message.from_user.id): return False
     try:
         count_to_post = int(context.args[0])
         if count_to_post <= 0: raise ValueError
-        
         pq = load_persistent_queue()
         if not pq:
             await update.message.reply_text("The queue is currently empty.")
@@ -1126,24 +969,18 @@ async def force_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool
         pq.sort(key=lambda x: x.get('scheduled_time', 0))
         to_post = pq[:count_to_post]
         remaining = pq[count_to_post:]
-        
         remaining = recalculate_queues(remaining)
         save_persistent_queue(remaining)
         
-        await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
-        
+        await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now...")
         for job in to_post:
-            if job['type'] == 'text':
-                await execute_post_text(context.bot, job)
-            else:
-                await execute_post_photo(context.bot, job)
+            if job['type'] == 'text': await execute_post_text(context.bot, job)
+            else: await execute_post_photo(context.bot, job)
             await asyncio.sleep(0.5)
             
         await update.message.reply_text(f"✅ Successfully force posted {len(to_post)} items!")
         return True
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ <b>Invalid format.</b> Send a valid number.\nExample: <code>5</code>\n\nType /cancel to abort.", parse_mode='HTML')
-        return False
+    except: return False
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return AWAITING_HELP_MESSAGE
@@ -1183,7 +1020,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role_title, reply_markup = get_main_menu(user_id)
     greeting = f"👋 Hello! (Role: {role_title})\n\n" if role_title != "User" else "👋 Hello!\n\n"
     await update.message.reply_text(
-        f"{greeting}Send any text or photo to post it anonymously to the channel.\n\nClick a button below for more options:",
+        f"{greeting}Send any text or photo to post it anonymously to the confession channel.\n\nClick a button below for more options:",
         reply_markup=reply_markup
     )
 
@@ -1193,38 +1030,14 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer() 
     user_id = query.from_user.id
 
-    if query.data in ['submit_confession', 'submit_ad']:
+    if query.data == 'submit_confession':
         submission = pending_submissions.get(user_id)
         if not submission:
             await query.edit_message_text("❌ Session expired. Please send your message again.")
             return
         
-        post_category = "Confession" if query.data == 'submit_confession' else "Advertisement"
-        target_chat_id = CHANNEL_ID if post_category == "Confession" else AD_CHANNEL_ID
-        
-        if post_category == "Advertisement":
-            has_photo = submission['type'] == 'photo'
-            text_content = submission['text']
-            
-            text_nospace = text_content.replace(' ', '').replace('-', '')
-            phone_pattern = r'(\+?6?01\d{8,9})'
-            has_phone = bool(re.search(phone_pattern, text_nospace))
-            has_link = contains_link_text(text_content)
-            has_username = '@' in text_content
-            
-            if not (has_photo or has_phone or has_link or has_username):
-                await query.edit_message_text(
-                    "❌ <b>Advertisement Rejected</b>\n\n"
-                    "Ads MUST contain at least one of the following:\n"
-                    "- A photo\n- A web link\n- A phone number\n- A Telegram username (@)\n\n"
-                    "Please edit your message and try again.", 
-                    parse_mode='HTML'
-                )
-                del pending_submissions[user_id]
-                return
-        
-        await query.edit_message_text(f"✅ Processing as {post_category}...")
-        await _schedule_post_direct(query.from_user, context, submission, post_category, target_chat_id)
+        await query.edit_message_text(f"✅ Processing as Confession...")
+        await _schedule_post_direct(query.from_user, context, submission, CHANNEL_ID)
         del pending_submissions[user_id]
         return
 
@@ -1281,9 +1094,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == 'menu_my_status':
         tier = get_user_tier(user_id)
         cfg = TIER_CONFIG[tier]
-        
         queue_text = "Instant (No Queue)" if cfg['personal_queue_duration'] == 0 else format_duration(cfg['personal_queue_duration'])
-        
         txt = (
             f"👤 <b>Runtime Profile Audit</b>\n\n"
             f"🎫 <b>Owned Access Tier:</b> <code>{cfg['name']}</code>\n\n"
@@ -1318,13 +1129,6 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 tier_wait = wait_sec + cfg['personal_queue_duration']
                 lines.append(f"• <b>{cfg['name']}:</b> {format_duration(tier_wait)} ({count} queuing)")
         
-        lines.append("\n<b>-- ADVERTISEMENTS --</b>")
-        ad_count = tier_counts.get('ad', 0)
-        ad_last_scheduled = tier_times.get('ad_global', now_tz)
-        ad_wait_sec = max(0, (ad_last_scheduled - now_tz).total_seconds())
-        ad_wait = ad_wait_sec + 120
-        lines.append(f"• <b>Marketplace Ads:</b> {format_duration(ad_wait)} ({ad_count} queuing)")
-
         lines.append(f"\n<i>*Wait times reflect the current active traffic load for each individual tier.</i>")
         
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
@@ -1336,7 +1140,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = (
             f"📊 <b>Bot Statistics</b>\n\n"
             f"👥 <b>Total Users:</b> <code>{len(load_known_users())}</code>\n"
-            f"✅ <b>Agreed Users (V2):</b> <code>{len(load_agreed_users())}</code>\n"
+            f"✅ <b>Agreed Users (Main):</b> <code>{len(load_agreed_users())}</code>\n"
             f"🚫 <b>Banned Users:</b> <code>{len(load_banned_users())}</code>\n"
             f"👮‍♂️ <b>Moderators:</b> <code>{len(load_moderators())}</code>\n"
             f"⏳ <b>Uptime:</b> <code>{uptime_str}</code>\n\n"
@@ -1356,7 +1160,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         msg = (
             f"📜 <b>Terms & Conditions Stats</b>\n\n"
             f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
-            f"✅ <b>Agreed (V2):</b> <code>{agreed_users}</code>\n"
+            f"✅ <b>Agreed (Main):</b> <code>{agreed_users}</code>\n"
             f"⏳ <b>Pending Agreement:</b> <code>{pending_users}</code>\n\n"
             f"<i>Note: Users in the 'Pending' list cannot send confessions or use the bot until they click 'I Agree' to the new rules.</i>"
         )
@@ -1511,11 +1315,9 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'broadcast': broadcast,
             'forcepost': force_post
         }
-        
         if first_word in admin_commands:
             context.args = parts[1:]
-            if user_id in action_states:
-                del action_states[user_id]
+            if user_id in action_states: del action_states[user_id]
             await admin_commands[first_word](update, context)
             return
 
@@ -1542,35 +1344,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Auto-reply message updated successfully!")
             success = True
         elif state == 'trig_forcepost':
-            try:
-                count_to_post = int(context.args[0])
-                if count_to_post <= 0: raise ValueError
-                
-                pq = load_persistent_queue()
-                if not pq:
-                    await update.message.reply_text("The queue is currently empty.")
-                else:
-                    pq.sort(key=lambda x: x.get('scheduled_time', 0))
-                    to_post = pq[:count_to_post]
-                    remaining = pq[count_to_post:]
-                    
-                    remaining = recalculate_queues(remaining)
-                    save_persistent_queue(remaining)
-                    
-                    await update.message.reply_text(f"🚀 Force posting {len(to_post)} items right now... Remaining queue times updated!")
-                    
-                    for job in to_post:
-                        if job['type'] == 'text':
-                            await execute_post_text(context.bot, job)
-                        else:
-                            await execute_post_photo(context.bot, job)
-                        await asyncio.sleep(0.5)
-                        
-                    await update.message.reply_text(f"✅ Successfully force posted {len(to_post)} items!")
-                success = True
-            except (IndexError, ValueError):
-                await update.message.reply_text("❌ <b>Invalid format.</b> Send a valid number.\nExample: <code>5</code>\n\nType /cancel to abort.", parse_mode='HTML')
-                success = False
+            success = await force_post(update, context)
             
         if success:
             del action_states[user_id]
@@ -1596,14 +1370,22 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=f"📢 <b>Timeout Notice</b>\nYou have been timed out for 1 minute.\n<b>Reason:</b> Invalid deletion attempt.\n\n💡 <i>Tip: You can instantly lift this timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our store: {SUB_BOT_URL}</i>",
                     parse_mode='HTML'
                 )
-            except Exception:
-                pass
-                
+            except: pass
             await log_admin_action(context, "Timeout (Auto)", "System", user_id, "Invalid deletion attempt ('delete')", "1 minute")
             return
         else:
             await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
             return
+
+    # Reminder System Logic
+    reminders = load_ad_reminders()
+    uid_str = str(user_id)
+    rem_count = reminders.get(uid_str, 0)
+    extra_note = ""
+    if rem_count < 2:
+        extra_note = "\n\n⚠️ <i>Reminder: If you want to post an Advertisement, DO NOT post it here. Use our dedicated marketplace bot: <b>@MarketTapahBot</b></i>"
+        reminders[uid_str] = rem_count + 1
+        save_ad_reminders(reminders)
 
     pending_submissions[user_id] = {
         'type': 'text',
@@ -1612,10 +1394,9 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     keyboard = [
         [InlineKeyboardButton("🗣️ Submit as Confession", callback_data="submit_confession")],
-        [InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")],
         [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]
     ]
-    await update.message.reply_text("Where would you like to post this?", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(f"Where would you like to post this?{extra_note}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.from_user: return
@@ -1628,6 +1409,16 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         del action_states[user_id]
         return
 
+    # Reminder System Logic
+    reminders = load_ad_reminders()
+    uid_str = str(user_id)
+    rem_count = reminders.get(uid_str, 0)
+    extra_note = ""
+    if rem_count < 2:
+        extra_note = "\n\n⚠️ <i>Reminder: If you want to post an Advertisement, DO NOT post it here. Use our dedicated marketplace bot: <b>@MarketTapahBot</b></i>"
+        reminders[uid_str] = rem_count + 1
+        save_ad_reminders(reminders)
+
     text_stripped = update.message.caption.strip() if update.message.caption else ""
     pending_submissions[user_id] = {
         'type': 'photo',
@@ -1636,10 +1427,9 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     }
     keyboard = [
         [InlineKeyboardButton("🗣️ Submit as Confession", callback_data="submit_confession")],
-        [InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")],
         [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]
     ]
-    await update.message.reply_text("Where would you like to post this photo?", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text(f"Where would you like to post this photo?{extra_note}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if isinstance(context.error, NetworkError): return
@@ -1648,7 +1438,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
     try:
-        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Bot is up! Running v20+ with Command Interceptor. Started at {now_str}")
+        await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Main Confession Bot is up! Dedicated Confessions Mode Active. Started at {now_str}")
     except Exception: pass
 
 def main():
