@@ -57,6 +57,45 @@ END_HOUR = 18
 LINKS_ENABLED = True
 PHOTOS_ENABLED = True
 
+# --- PROMOTIONAL MESSAGE ---
+PROMO_TEXT = (
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n"
+    "⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️⬇️\n\n"
+    "@MarketTapahBot\n\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️\n"
+    "⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️⬆️"
+)
+
+TIER_CONFIG = {
+    'basic': {'name': 'Normal User (Default)', 'link_cooldown': 14400, 'photo_cooldown': 14400, 'personal_queue_duration': 120, 'delete_cooldown': 60, 'delete_access': 'own'},
+    'tier1': {'name': 'Tier 1 Premium', 'link_cooldown': 14400, 'photo_cooldown': 14400, 'personal_queue_duration': 30, 'delete_cooldown': 30, 'delete_access': 'all'},
+    'tier2': {'name': 'Tier 2 Premium', 'link_cooldown': 14400, 'photo_cooldown': 21600, 'personal_queue_duration': 60, 'delete_cooldown': 60, 'delete_access': 'all'},
+    'club': {'name': 'Club/Association Sub', 'link_cooldown': 3600, 'photo_cooldown': 3600, 'personal_queue_duration': 0, 'delete_cooldown': 0, 'delete_access': 'own'}
+}
+
 def format_duration(seconds: Union[int, float]) -> str:
     seconds = int(seconds)
     if seconds <= 0: return "0 seconds"
@@ -73,26 +112,26 @@ def format_duration(seconds: Union[int, float]) -> str:
 GUIDE_TEXT = (
     "<b>🛒 UiTM Tapah Marketplace Bot Guide 🛒</b>\n\n"
     "<u>Marketplace Queueing</u>\n"
-    "- Ads are STRICTLY posted to the Marketplace channel.\n"
-    "- To ensure fairness and prevent spam, <b>ALL Ads have a strict 2-minute global queue</b> regardless of your subscription tier.\n\n"
+    "- Ads are posted to the Marketplace channel.\n"
+    "- <b>All Ads have a strict 2-minute global queue</b> regardless of your subscription tier to ensure fairness.\n\n"
     "<u>Advertisement Requirements</u>\n"
     "- <b>Requirements:</b> Your ad MUST contain at least a photo, a link, a phone number, or a Telegram username (@). Ads without these will be rejected.\n"
-    "- <b>Strict Penalty:</b> Posting a regular confession inside this Ad bot will result in an immediate 1-WEEK timeout across all networks.\n\n"
+    "- <b>Strict Penalty:</b> Posting a regular confession inside this Ad bot will result in an immediate 1-WEEK timeout.\n\n"
     "<u>Mature Content 🔞</u>\n"
     "- Promoting explicit content will result in an instant and permanent ban. No appeals.\n\n"
     "<u>Deletion & Queue Management</u>\n"
-    "- To delete a LIVE post, forward the message to the bot from the marketplace channel.\n"
+    "- To delete a LIVE ad, forward the message to the bot from the Marketplace channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
-    "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
+    "- To cancel your PENDING ads that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
     "<u>Timeouts & Moderation</u>\n"
-    "- Timed punishments are imposed for rule-breaking. Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our Store bot."
+    "- Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass for 200 Stars in our Store bot."
 )
 
 TNC_TEXT = (
     "👋 Welcome to Tapah Marketplace Bot!\n\n"
     "<b>NOTICE: This bot is STRICTLY for Advertisements and Marketplace items!</b>\n"
-    "If you want to post a Confession, you must use our main bot.\n\n"
-    "By tapping below, you acknowledge and agree to fully abide by the Marketplace rules, and you understand that posting a confession here will result in a 1-week timeout."
+    "If you want to post a Confession, you must use @TapahConfessionBot.\n\n"
+    "By tapping below, you acknowledge and agree to abide by the Marketplace rules. Posting a confession here results in a 1-week timeout."
 )
 
 user_delete_cooldowns: Dict[int, datetime.datetime] = {}
@@ -106,7 +145,8 @@ def load_banned_words() -> Set[str]:
     words = set()
     try:
         if os.path.exists("banned_words.txt"):
-            with open("banned_words.txt", "r", encoding="utf-8") as f: words = {line.strip().lower() for line in f if line.strip()}
+            with open("banned_words.txt", "r", encoding="utf-8") as f:
+                words = {line.strip().lower() for line in f if line.strip()}
     except: pass
     return words
 
@@ -134,7 +174,8 @@ def load_timeouts() -> Dict[int, Dict[str, Union[float, str]]]:
                         uid = int(parts[0])
                         timestamp = float(parts[1])
                         reason = parts[2] if len(parts) > 2 else "No reason provided."
-                        if float(timestamp) > time.time(): timeouts[uid] = {'expiry': timestamp, 'reason': reason}
+                        if float(timestamp) > time.time():
+                            timeouts[uid] = {'expiry': timestamp, 'reason': reason}
     except: pass
     return timeouts
 
@@ -147,7 +188,8 @@ def load_moderators() -> Set[int]:
     mods = set()
     try:
         if os.path.exists("moderators.txt"):
-            with open("moderators.txt", "r", encoding="utf-8") as f: mods = {int(line.strip()) for line in f if line.strip().isdigit()}
+            with open("moderators.txt", "r", encoding="utf-8") as f:
+                mods = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return mods
 
@@ -167,7 +209,8 @@ def load_agreed_users() -> Set[int]:
     users = set()
     try:
         if os.path.exists("agreed_users_market.txt"):
-            with open("agreed_users_market.txt", "r", encoding="utf-8") as f: users = {int(line.strip()) for line in f if line.strip().isdigit()}
+            with open("agreed_users_market.txt", "r", encoding="utf-8") as f:
+                users = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return users
 
@@ -180,7 +223,8 @@ def load_known_users() -> Set[int]:
     ids = set()
     try:
         if os.path.exists("users_market.txt"):
-            with open("users_market.txt", "r", encoding="utf-8") as f: ids = {int(line.strip()) for line in f if line.strip().isdigit()}
+            with open("users_market.txt", "r", encoding="utf-8") as f:
+                ids = {int(line.strip()) for line in f if line.strip().isdigit()}
     except: pass
     return ids
 
@@ -192,12 +236,14 @@ def save_user(uid):
 def load_persistent_queue() -> list:
     try:
         if os.path.exists("persistent_queue_market.json"):
-            with open("persistent_queue_market.json", "r", encoding="utf-8") as f: return json.load(f)
+            with open("persistent_queue_market.json", "r", encoding="utf-8") as f:
+                return json.load(f)
     except: pass
     return []
 
 def save_persistent_queue(queue_list: list):
-    with open("persistent_queue_market.json", "w", encoding="utf-8") as f: json.dump(queue_list, f, ensure_ascii=False, indent=4)
+    with open("persistent_queue_market.json", "w", encoding="utf-8") as f:
+        json.dump(queue_list, f, ensure_ascii=False, indent=4)
 
 def load_tier_times() -> Dict[str, datetime.datetime]:
     try:
@@ -209,7 +255,8 @@ def load_tier_times() -> Dict[str, datetime.datetime]:
     return {}
 
 def save_tier_times(times_dict: Dict[str, datetime.datetime]):
-    with open("tier_times_market.json", "w") as f: json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
+    with open("tier_times_market.json", "w") as f:
+        json.dump({k: v.timestamp() for k, v in times_dict.items()}, f)
 
 def get_main_queue_counts():
     counts = {}
@@ -247,15 +294,19 @@ def recalculate_queues(pq_list: list) -> list:
         new_tier_times[t] = new_sched
     current_tier_times = load_tier_times()
     for t_key in list(current_tier_times.keys()):
-        if t_key in new_tier_times: current_tier_times[t_key] = datetime.datetime.fromtimestamp(new_tier_times[t_key], TIMEZONE)
-        else: current_tier_times[t_key] = now_tz
+        if t_key in new_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(new_tier_times[t_key], TIMEZONE)
+        else:
+            current_tier_times[t_key] = now_tz
     for t_key, sched in new_tier_times.items():
-        if t_key not in current_tier_times: current_tier_times[t_key] = datetime.datetime.fromtimestamp(sched, TIMEZONE)
+        if t_key not in current_tier_times:
+            current_tier_times[t_key] = datetime.datetime.fromtimestamp(sched, TIMEZONE)
     save_tier_times(current_tier_times)
     return pq_list
 
 def append_post_history(message_id: int, user_id: int):
-    with open("post_history_market.txt", "a", encoding="utf-8") as f: f.write(f"{message_id},{user_id},0\n")
+    with open("post_history_market.txt", "a", encoding="utf-8") as f:
+        f.write(f"{message_id},{user_id},0\n")
 
 def query_post_history(message_id: int) -> Dict[str, Any]:
     try:
@@ -279,7 +330,8 @@ def load_time_settings():
     except: pass
 
 def save_time_settings():
-    with open("active_time.txt", "w", encoding="utf-8") as f: f.write(f"{START_HOUR},{END_HOUR}")
+    with open("active_time.txt", "w", encoding="utf-8") as f:
+        f.write(f"{START_HOUR},{END_HOUR}")
 
 load_time_settings()
 
@@ -296,9 +348,9 @@ async def log_admin_action(context: ContextTypes.DEFAULT_TYPE, action_type: str,
     if duration: mod_log += f"⏳ <b>Duration:</b> {duration}\n"
     mod_log += f"📝 <b>Reason:</b> {html.escape(reason)}"
     try: await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=owner_log, parse_mode='HTML')
-    except: pass
+    except Exception as e: print(f"Admin Log Error: {e}")
     try: await context.bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=mod_log, parse_mode='HTML')
-    except: pass
+    except Exception as e: print(f"Mod Log Error: {e}")
 
 async def is_user_restricted(user_id: int, update: Update=None, context: ContextTypes.DEFAULT_TYPE=None) -> bool:
     if is_owner_or_mod(user_id): return False 
@@ -361,21 +413,32 @@ def create_log_message(job_info: Dict[str, Any], content_type: str, text_content
     display_username = f"@{html.escape(raw_username)}" if raw_username else "Not available"
     safe_name = html.escape(str(job_info['user_name']))
     safe_uid = html.escape(str(job_info['user_id']))
-    log_message = f"<b>🛒 New {content_type} Advertisement Log 🛒</b>\n\n<b>User ID:</b> <code>{safe_uid}</code>\n<b>Name:</b> {safe_name}\n<b>Username:</b> {display_username}\n\n"
+    log_message = (
+        f"<b>🛒 New {content_type} Advertisement Log 🛒</b>\n\n"
+        f"<b>User ID:</b> <code>{safe_uid}</code>\n"
+        f"<b>Name:</b> {safe_name}\n"
+        f"<b>Username:</b> {display_username}\n\n"
+    )
     content_to_log = text_content or job_info.get('caption')
     if content_to_log: log_message += f"<b>Content:</b>\n{html.escape(content_to_log)}"
     return log_message
 
 def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_content: str = None) -> str:
     safe_uid = html.escape(str(job_info['user_id']))
-    log_message = f"<b>🛒 New {content_type} Advertisement Log (Moderator) 🛒</b>\n\n<b>User ID:</b> <code>{safe_uid}</code>\n\n"
+    log_message = (
+        f"<b>🛒 New {content_type} Advertisement Log (Moderator) 🛒</b>\n\n"
+        f"<b>User ID:</b> <code>{safe_uid}</code>\n\n"
+    )
     content_to_log = text_content or job_info.get('caption')
     if content_to_log: log_message += f"<b>Content:</b>\n{html.escape(content_to_log)}"
     log_message += f"\n\n<i>Mod Tip: If this is a confession in the Ad channel, timeout for 1 week using:</i>\n<code>/timeout {safe_uid} 10080 Posted confession in Ad channel</code>\n"
     return log_message
 
 def get_tnc_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("📖 Read Guide", callback_data='tc_guide')], [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Read Guide", callback_data='tc_guide')],
+        [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]
+    ])
 
 def get_main_menu(user_id: int):
     keyboard = []
@@ -418,7 +481,7 @@ async def execute_post_text(bot, job_info):
         append_post_history(msg.message_id, job_info['user_id'])
         await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
         await bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Text", job_info['text']), parse_mode='HTML', read_timeout=20)
-    except: pass
+    except Exception as e: print(f"Post Error (Text): {e}")
 
 async def execute_post_photo(bot, job_info):
     try:
@@ -428,7 +491,7 @@ async def execute_post_photo(bot, job_info):
         await bot.send_message(chat_id=LOG_CHANNEL_ID, text=create_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
         await bot.send_photo(chat_id=MOD_LOG_CHANNEL_ID, photo=job_info['photo'], caption=job_info['caption'])
         await bot.send_message(chat_id=MOD_LOG_CHANNEL_ID, text=create_mod_log_message(job_info, "Photo"), parse_mode='HTML', read_timeout=30)
-    except: pass
+    except Exception as e: print(f"Post Error (Photo): {e}")
 
 async def persistent_queue_worker(context: ContextTypes.DEFAULT_TYPE):
     pq = load_persistent_queue()
@@ -444,6 +507,15 @@ async def persistent_queue_worker(context: ContextTypes.DEFAULT_TYPE):
         for job in jobs_to_run:
             if job['type'] == 'text': await execute_post_text(context.bot, job)
             else: await execute_post_photo(context.bot, job)
+
+# --- 30 MINUTE PROMOTIONAL BROADCAST ---
+async def send_periodic_promo(context: ContextTypes.DEFAULT_TYPE):
+    if is_bot_active():
+        try:
+            await context.bot.send_message(chat_id=AD_CHANNEL_ID, text=PROMO_TEXT)
+        except Exception as e:
+            print(f"Periodic Promo Error: {e}")
+# ---------------------------------------
 
 async def _schedule_post_direct(user, context: ContextTypes.DEFAULT_TYPE, submission: Dict[str, Any], target_chat_id: str):
     user_id = user.id
@@ -1185,6 +1257,8 @@ def main():
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).read_timeout(30).connect_timeout(30).build()
     
     application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
+    application.job_queue.run_repeating(send_periodic_promo, interval=1800, first=10)
+    
     application.add_error_handler(error_handler)
     
     for cmd, func in [("start", start), ("cancel", cancel), ("settime", set_time), ("broadcast", broadcast), ("ban", ban_user), ("unban", unban_user), ("addmod", add_mod), ("removemod", remove_mod), ("timeout", timeout_user), ("untimeout", remove_timeout), ("addban", add_banned_word), ("removeban", remove_banned_word), ("revoke", revoke_subscription), ("gift", gift_subscription), ("clearqueue", clear_queue), ("clearallqueue", clear_all_queue)]:
