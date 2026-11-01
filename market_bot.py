@@ -28,6 +28,7 @@ import pytz
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 try:
     TOKEN = os.environ.get('MARKET_BOT_TOKEN')
@@ -484,7 +485,7 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📈 Insights", callback_data='menu_insights'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
             [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status')],
-            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
+            [InlineKeyboardButton("🗑 Clear My Queue", callback_data='menu_clear')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
     else:
@@ -660,8 +661,16 @@ async def handle_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Access Denied. Your authorship signatures do not match.")
             return
 
+        if not is_privileged:
+            last_del = user_delete_cooldowns.get(user_id)
+            if last_del and (now - last_del).total_seconds() < 60:
+                rem = 60 - (now - last_del).total_seconds()
+                await update.message.reply_text(f"⏳ Please wait {format_duration(rem)} before deleting again.")
+                return
+
         try:
             await context.bot.delete_message(chat_id=AD_CHANNEL_ID, message_id=msg_id)
+            if not is_privileged: user_delete_cooldowns[user_id] = now
             await update.message.reply_text("🗑 Message successfully deleted from channel.")
             
             content = update.message.text or update.message.caption or "[Media with no caption]"
@@ -1424,15 +1433,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("To delete a post, you need to forward the message from the channel. Just typing 'delete' does not work.")
             return
 
-    reminders = load_ad_reminders()
-    uid_str = str(user_id)
-    rem_count = reminders.get(uid_str, 0)
-    extra_note = ""
-    if rem_count < 2:
-        extra_note = "\n\n⚠️ <i>Reminder: If you want to post an Advertisement, DO NOT post it here. Use our dedicated marketplace bot: <b>@MarketTapahBot</b></i>"
-        reminders[uid_str] = rem_count + 1
-        save_ad_reminders(reminders)
-
     pending_submissions[user_id] = {'type': 'text', 'text': text_stripped, 'photo': None}
     keyboard = [[InlineKeyboardButton("🛒 Submit as Advertisement", callback_data="submit_ad")], [InlineKeyboardButton("❌ Cancel", callback_data="submit_cancel")]]
     await update.message.reply_text("Where would you like to post this?", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -1447,15 +1447,6 @@ async def handle_photo_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Action cancelled. I was expecting text for the command.")
         del action_states[user_id]
         return
-
-    reminders = load_ad_reminders()
-    uid_str = str(user_id)
-    rem_count = reminders.get(uid_str, 0)
-    extra_note = ""
-    if rem_count < 2:
-        extra_note = "\n\n⚠️ <i>Reminder: If you want to post an Advertisement, DO NOT post it here. Use our dedicated marketplace bot: <b>@MarketTapahBot</b></i>"
-        reminders[uid_str] = rem_count + 1
-        save_ad_reminders(reminders)
 
     text_stripped = update.message.caption.strip() if update.message.caption else ""
     pending_submissions[user_id] = {'type': 'photo', 'text': text_stripped, 'photo': update.message.photo[-1].file_id}
