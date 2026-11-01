@@ -34,14 +34,12 @@ except ValueError:
     print("CRITICAL ERROR: OWNER_ID must be a valid integer.")
     sys.exit(1)
 
-# TIER DEFINITIONS FOR PURCHASING
-# Format: Payload Name -> (Title, Description, Stars, Duration Days, Code)
 PRODUCT_CATALOG = {
-    'sub_tier_s': ("Sultan Tier", "14 Days Premium Access", 200, 14, 's'),
-    'sub_tier_a': ("Along Tier", "14 Days Premium Access", 100, 14, 'a'),
-    'sub_tier_b+': ("Bos Tier", "14 Days Premium Access", 50, 14, 'b+'),
-    'sub_tier_c+': ("Club Tier", "30 Days Access (Approval Required)", 200, 30, 'c+'),
-    'sub_tier_c': ("Cepat Kaya Tier", "14 Days Marketplace Bypass", 100, 14, 'c'),
+    'sub_tier_s': ("Sultan Tier (S)", "14 Days Premium Access", 200, 14, 's'),
+    'sub_tier_a': ("Along Tier (A)", "14 Days Premium Access", 100, 14, 'a'),
+    'sub_tier_b+': ("Bos Tier (B+)", "14 Days Premium Access", 50, 14, 'b+'),
+    'sub_tier_c+': ("Club Tier (C+)", "30 Days Access (Approval Required)", 200, 30, 'c+'),
+    'sub_tier_c': ("Cepat Kaya Tier (C)", "14 Days Marketplace Bypass", 100, 14, 'c'),
     'clear_timeout': ("Clear Timeout Pass", "Instantly lift current timeout", 200, 0, 'none')
 }
 
@@ -70,12 +68,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🏬 <b>Welcome to the Tapah Subscriptions Store!</b>\n\n"
         "Purchase premium queue bypasses and elevated post limits instantly using Telegram Stars.\n\n"
-        "<b>Available Plans:</b>\n"
-        "👑 <b>Sultan (S)</b> - 200 Stars/14 Days\n"
-        "🥇 <b>Along (A)</b> - 100 Stars/14 Days\n"
-        "👔 <b>Bos (B+)</b> - 50 Stars/14 Days\n"
-        "🛍️ <b>Cepat Kaya (C)</b> - 100 Stars/14 Days\n"
-        "🏫 <b>Club (C+)</b> - 200 Stars/30 Days\n\n"
+        "📊 <b>Tier Matrix</b>\n"
+        "<b>1. Sultan (S)</b> - 200 Stars/14 Days\n"
+        "• Queue: Instant\n• Limit: 15 items/day\n• Deletion: All Posts\n\n"
+        "<b>2. Along (A)</b> - 100 Stars/14 Days\n"
+        "• Queue: 15s\n• Limit: 10 items/day\n• Deletion: All Posts\n\n"
+        "<b>3. Bos (B+)</b> - 50 Stars/14 Days\n"
+        "• Queue: 30s\n• Limit: 5 items/day\n• Deletion: Own Posts\n\n"
+        "<b>4. Cepat Kaya (C)</b> - 100 Stars/14 Days\n"
+        "• Queue: Instant (Marketplace Only)\n• Limit: 10 items/day\n• Deletion: Own Posts\n\n"
+        "<b>5. Club (C+)</b> - 200 Stars/30 Days\n"
+        "• Queue: Instant\n• Limit: 10 items/day\n• Deletion: Own Posts\n\n"
+        "<i>*Basic (Free) users have a 120s queue and a 2 item/day limit.</i>\n\n"
         "Select a product below to purchase:"
     )
     markup = InlineKeyboardMarkup([
