@@ -1,232 +1,164 @@
 import os
 import sys
+import datetime
 import time
 import logging
-import html
-from telegram import LabeledPrice, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, LabeledPrice, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    PreCheckoutQueryHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-    ConversationHandler
+    ApplicationBuilder, CommandHandler, PreCheckoutQueryHandler,
+    MessageHandler, filters, CallbackQueryHandler, ContextTypes, Application
 )
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(dotenv_path=os.path.join(SCRIPT_DIR, '.env'))
 except ImportError:
     pass
 
-SUB_BOT_TOKEN = os.environ.get('SUB_BOT_TOKEN')
-OWNER_ID_STR = os.environ.get('OWNER_ID')
-if not SUB_BOT_TOKEN or not OWNER_ID_STR:
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+try:
+    TOKEN = os.environ.get('SUB_BOT_TOKEN')
+    OWNER_ID_STR = os.environ.get('OWNER_ID')
+    LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
+    
+    if not all([TOKEN, OWNER_ID_STR, LOG_CHANNEL_ID]):
+        print("CRITICAL ERROR: Missing SUB_BOT_TOKEN, OWNER_ID, or LOG_CHANNEL_ID in .env")
+        sys.exit(1)
+    OWNER_ID = int(OWNER_ID_STR)
+except ValueError:
+    print("CRITICAL ERROR: OWNER_ID must be a valid integer.")
     sys.exit(1)
 
-OWNER_ID = int(OWNER_ID_STR)
-
-# Defined Products
-PRODUCTS = {
-    'tier1': {'name': 'Tier 1 Premium (14 Days)', 'price': 100, 'desc': '30s queue, delete all, 14 days access.'},
-    'tier2': {'name': 'Tier 2 Premium (14 Days)', 'price': 50, 'desc': '1m queue, long photo cd, 14 days access.'},
-    'club': {'name': 'Club Sub (30 Days)', 'price': 200, 'desc': 'Instant posting, no queue, 30 days access.'},
-    'clear_timeout': {'name': 'Clear Timeout Pass', 'price': 200, 'desc': 'Instantly removes your active timeout.'}
+# TIER DEFINITIONS FOR PURCHASING
+# Format: Payload Name -> (Title, Description, Stars, Duration Days, Code)
+PRODUCT_CATALOG = {
+    'sub_tier_s': ("Sultan Tier", "14 Days Premium Access", 200, 14, 's'),
+    'sub_tier_a': ("Along Tier", "14 Days Premium Access", 100, 14, 'a'),
+    'sub_tier_b+': ("Bos Tier", "14 Days Premium Access", 50, 14, 'b+'),
+    'sub_tier_c+': ("Club Tier", "30 Days Access (Approval Required)", 200, 30, 'c+'),
+    'sub_tier_c': ("Cepat Kaya Tier", "14 Days Marketplace Bypass", 100, 14, 'c'),
+    'clear_timeout': ("Clear Timeout Pass", "Instantly lift current timeout", 200, 0, 'none')
 }
 
-AWAITING_CLUB_DETAILS = 1
+def load_timeouts():
+    timeouts = {}
+    try:
+        if os.path.exists("timeouts.txt"):
+            with open("timeouts.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if "," in line:
+                        parts = line.strip().split(',', 2) 
+                        uid = int(parts[0])
+                        timestamp = float(parts[1])
+                        reason = parts[2] if len(parts) > 2 else "No reason"
+                        if float(timestamp) > time.time():
+                            timeouts[uid] = {'expiry': timestamp, 'reason': reason}
+    except: pass
+    return timeouts
+
+def save_timeouts(timeouts_dict):
+    with open("timeouts.txt", "w", encoding="utf-8") as f:
+        for uid, data in timeouts_dict.items():
+            if data['expiry'] > time.time(): f.write(f"{uid},{data['expiry']},{data['reason']}\n")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton(f"⭐ Tier 1 Premium - 100 Stars", callback_data='buy_tier1')],
-        [InlineKeyboardButton(f"⭐ Tier 2 Premium - 50 Stars", callback_data='buy_tier2')],
-        [InlineKeyboardButton(f"🏛️ Buy Club Sub - 200 Stars", callback_data='buy_club')],
-        [InlineKeyboardButton(f"🎟️ Clear Timeout Pass - 200 Stars", callback_data='buy_clear_timeout')]
-    ]
     msg = (
-        "🛒 <b>Welcome to the Tapah Store!</b>\n\n"
-        "Purchase premium tiers or unlock utility passes.\n"
-        "<i>Note: You must Apply and be Approved before buying the Club Sub.</i>\n\n"
-        "Select an item below:"
+        "🏬 <b>Welcome to the Tapah Subscriptions Store!</b>\n\n"
+        "Purchase premium queue bypasses and elevated post limits instantly using Telegram Stars.\n\n"
+        "<b>Available Plans:</b>\n"
+        "👑 <b>Sultan (S)</b> - 200 Stars/14 Days\n"
+        "🥇 <b>Along (A)</b> - 100 Stars/14 Days\n"
+        "👔 <b>Bos (B+)</b> - 50 Stars/14 Days\n"
+        "🛍️ <b>Cepat Kaya (C)</b> - 100 Stars/14 Days\n"
+        "🏫 <b>Club (C+)</b> - 200 Stars/30 Days\n\n"
+        "Select a product below to purchase:"
     )
-    if update.message:
-        await update.message.reply_text(msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-    return ConversationHandler.END
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👑 Sultan (200 Stars)", callback_data='buy_sub_tier_s')],
+        [InlineKeyboardButton("🥇 Along (100 Stars)", callback_data='buy_sub_tier_a')],
+        [InlineKeyboardButton("👔 Bos (50 Stars)", callback_data='buy_sub_tier_b+')],
+        [InlineKeyboardButton("🛍️ Cepat Kaya (100 Stars)", callback_data='buy_sub_tier_c')],
+        [InlineKeyboardButton("🏫 Club/Association (200 Stars)", callback_data='buy_sub_tier_c+')],
+        [InlineKeyboardButton("🔓 Clear Timeout Pass (200 Stars)", callback_data='buy_clear_timeout')]
+    ])
+    await update.message.reply_text(msg, parse_mode='HTML', reply_markup=markup)
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    action = query.data
-    user_id = query.from_user.id
-    
-    if action == 'buy_club':
-        approved = False
-        try:
-            if os.path.exists("approved_clubs.txt"):
-                with open("approved_clubs.txt", "r") as f:
-                    if str(user_id) in f.read():
-                        approved = True
-        except: pass
+    if query.data.startswith('buy_'):
+        payload_id = query.data.replace('buy_', '')
+        if payload_id not in PRODUCT_CATALOG: return
         
-        if not approved:
-            await query.edit_message_text(
-                "❌ <b>Approval Required</b>\n\nYou must be an approved Club or Association to purchase this tier. Please apply first.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📝 Apply for Club", callback_data='apply_club')]]),
-                parse_mode='HTML'
-            )
-            return ConversationHandler.END
-
-    if action.startswith('buy_'):
-        prod_id = action.split('_', 1)[1]
-        if prod_id in PRODUCTS:
-            prod = PRODUCTS[prod_id]
-            title = prod['name']
-            description = prod['desc']
-            payload = f"TapahPurchase_{prod_id}_{user_id}"
-            
-            await context.bot.send_invoice(
-                chat_id=query.message.chat_id,
-                title=title,
-                description=description,
-                payload=payload,
-                provider_token="",  
-                currency="XTR",
-                prices=[LabeledPrice(title, prod['price'])]
-            )
-        return ConversationHandler.END
+        title, desc, price, days, code = PRODUCT_CATALOG[payload_id]
+        prices = [LabeledPrice(title, price)]
         
-    elif action == 'apply_club':
-        await query.edit_message_text(
-            "📝 <b>Club/Association Application</b>\n\n"
-            "Please reply to this message with your <b>Club Name, Your Position, and Purpose</b>.\n"
-            "<i>(Type /cancel to abort)</i>",
-            parse_mode='HTML'
+        await context.bot.send_invoice(
+            chat_id=query.from_user.id,
+            title=title,
+            description=desc,
+            payload=payload_id,
+            provider_token="",  
+            currency="XTR",     
+            prices=prices
         )
-        return AWAITING_CLUB_DETAILS
-        
-    elif action.startswith('approve_club_'):
-        if user_id != OWNER_ID:
-            await query.answer("Access Denied", show_alert=True)
-            return ConversationHandler.END
-            
-        target_uid = int(action.split('_')[2])
-        
-        with open("approved_clubs.txt", "a") as f:
-            f.write(f"{target_uid}\n")
-            
-        await query.edit_message_text(f"✅ Club access APPROVED for User <code>{target_uid}</code>. They can now purchase it.", parse_mode='HTML')
-        try:
-            await context.bot.send_message(
-                chat_id=target_uid, 
-                text="🎉 <b>Application Approved!</b>\nYour Club Application was approved. You can now use the /start command here to purchase the <b>Club Sub</b> for 200 Stars.", 
-                parse_mode='HTML'
-            )
-        except Exception:
-            pass
-        return ConversationHandler.END
-        
-    elif action.startswith('reject_club_'):
-        if user_id != OWNER_ID:
-            await query.answer("Access Denied", show_alert=True)
-            return ConversationHandler.END
-            
-        target_uid = int(action.split('_')[2])
-        await query.edit_message_text(f"❌ Club access REJECTED for User <code>{target_uid}</code>.", parse_mode='HTML')
-        try:
-            await context.bot.send_message(
-                chat_id=target_uid, 
-                text="❌ <b>Application Rejected</b>\nYour request for Club Sub access has been declined by the Developer.", 
-                parse_mode='HTML'
-            )
-        except Exception:
-            pass
-        return ConversationHandler.END
-
-async def handle_club_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.message.from_user
-    details = update.message.text
-    
-    admin_msg = (
-        f"📝 <b>New Club Application</b>\n\n"
-        f"<b>User:</b> {user.first_name} (<code>{user.id}</code>)\n"
-        f"<b>Username:</b> @{user.username}\n\n"
-        f"<b>Details provided:</b>\n{html.escape(details)}"
-    )
-    keyboard = [
-        [InlineKeyboardButton("✅ Approve", callback_data=f"approve_club_{user.id}"),
-         InlineKeyboardButton("❌ Reject", callback_data=f"reject_club_{user.id}")]
-    ]
-    await context.bot.send_message(chat_id=OWNER_ID, text=admin_msg, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(keyboard))
-        
-    await update.message.reply_text("✅ Your application has been sent to the Developer. You will be notified once reviewed.")
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Application cancelled.")
-    return ConversationHandler.END
 
 async def precheckout_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
-    if query.invoice_payload.startswith("TapahPurchase_"):
-        await query.answer(ok=True)
+    if query.invoice_payload not in PRODUCT_CATALOG:
+        await query.answer(ok=False, error_message="Product not found or unavailable.")
     else:
-        await query.answer(ok=False, error_message="Unknown payload.")
+        await query.answer(ok=True)
 
 async def successful_payment_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payment = update.message.successful_payment
     payload = payment.invoice_payload
+    user = update.message.from_user
+    uid = user.id
     
-    if payload.startswith("TapahPurchase_"):
-        parts = payload.split('_')
-        prod_id = parts[1]
-        user_id = update.message.from_user.id
-        
-        if prod_id in ['tier1', 'tier2', 'club']:
-            days = 14 if prod_id in ['tier1', 'tier2'] else 30
-            expiry = time.time() + (days * 86400)
-            with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
-                f.write(f"{user_id},{prod_id},{expiry}\n")
-            await update.message.reply_text(f"✅ Payment successful! You have been granted {PRODUCTS[prod_id]['name']}.")
-        
-        elif prod_id == 'clear_timeout':
-            try:
-                lines = []
-                if os.path.exists("timeouts.txt"):
-                    with open("timeouts.txt", "r", encoding="utf-8") as f:
-                        lines = f.readlines()
-                with open("timeouts.txt", "w", encoding="utf-8") as f:
-                    for line in lines:
-                        if line.strip() and not line.startswith(f"{user_id},"):
-                            f.write(line)
-                await update.message.reply_text("✅ Payment successful! Your timeout has been instantly cleared. You can now post again.")
-            except Exception as e:
-                await update.message.reply_text("✅ Payment successful, but an error occurred clearing the timeout. Please contact the Dev.")
+    if payload not in PRODUCT_CATALOG: return
+    title, desc, price, days, code = PRODUCT_CATALOG[payload]
+    
+    if payload == 'clear_timeout':
+        timeouts = load_timeouts()
+        if uid in timeouts:
+            del timeouts[uid]
+            save_timeouts(timeouts)
+            await update.message.reply_text("✅ <b>Timeout Cleared!</b> You can now use the bots again.", parse_mode='HTML')
+            try: await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🔓 <b>Timeout Cleared (Purchased)</b>\nUser: <code>{uid}</code>\nItem: {title}", parse_mode='HTML')
+            except: pass
+        else:
+            await update.message.reply_text("✅ Purchase successful, but you didn't have an active timeout!")
+    else:
+        now = time.time()
+        expiry = now + (days * 86400)
+        with open("active_subscriptions.txt", "a", encoding="utf-8") as f:
+            f.write(f"{uid},{code},{expiry}\n")
+            
+        await update.message.reply_text(f"🎉 <b>Purchase Successful!</b>\n\nYou are now subscribed to the <b>{title}</b> for {days} days.\nReturn to the main bot and check 'My Status' to see your new perks!", parse_mode='HTML')
+        try: await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"💰 <b>New Subscription (Purchased)</b>\nUser: <code>{uid}</code>\nTier: {title} ({days} Days)\nPaid: {price} Stars", parse_mode='HTML')
+        except: pass
+
+async def post_init(application: Application):
+    try: await application.bot.send_message(chat_id=OWNER_ID, text="✅ Subscription Store Bot is Online!")
+    except: pass
 
 def main():
-    app = ApplicationBuilder().token(SUB_BOT_TOKEN).build()
+    application = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
     
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler('start', start),
-            CallbackQueryHandler(button_handler, pattern='^(buy_|apply_club|approve_club_|reject_club_)')
-        ],
-        states={
-            AWAITING_CLUB_DETAILS: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_club_details)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel), CommandHandler('start', start)]
-    )
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern='^buy_'))
+    application.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
     
-    app.add_handler(PreCheckoutQueryHandler(precheckout_callback))
-    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_callback))
-    app.add_handler(conv_handler)
-    
-    print("--- Sub Bot is Online ---")
-    app.run_polling()
+    print("--- Subscription Store Bot is Online ---")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
