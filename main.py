@@ -61,7 +61,7 @@ AUTO_REPLY_TEXT = "Use @TapahConfessionBot to submit your confession\n\nIf you'r
 AUTO_REPLY_PAUSE_DURATION = 86400
 
 TIER_CONFIG = {
-    'b': {'name': 'Biasa', 'code': 'B', 'price': 'Free', 'queue': 60, 'limit': 2, 'delete': 'own'},
+    'b': {'name': 'Biasa', 'code': 'B', 'price': 'Free', 'queue': 120, 'limit': 2, 'delete': 'own'},
     'b+': {'name': 'Bos', 'code': 'B+', 'price': '50 Stars/bi-weekly', 'queue': 30, 'limit': 5, 'delete': 'own'},
     'a': {'name': 'Along', 'code': 'A', 'price': '100 Stars/bi-weekly', 'queue': 15, 'limit': 10, 'delete': 'all'},
     's': {'name': 'Sultan', 'code': 'S', 'price': '200 Stars/bi-weekly', 'queue': 0, 'limit': 15, 'delete': 'all'},
@@ -86,7 +86,7 @@ GUIDE_TEXT = (
     "<b>✏️ UiTM Tapah Confession Bot Guide ✏️</b>\n\n"
     "<u>Posts & Tier-Based Queue</u>\n"
     "- Confessions are queued independently by subscription tier. Basic users do not wait behind Premium users.\n"
-    "- Tier queues range from Instant to 1 minute based on your plan.\n\n"
+    "- Tier queues range from Instant to 2 minutes based on your plan.\n\n"
     "<u>Marketplace / Advertisements 🛒</u>\n"
     "- <b>DO NOT post ads here.</b> All ads must go to our dedicated Marketplace bot: <b>@MarketTapahBot</b>.\n"
     "- <b>Strict Penalty:</b> Posting an advertisement inside this Confession channel will result in an immediate 1-WEEK timeout.\n\n"
@@ -175,7 +175,13 @@ def get_user_tier(uid: int) -> str:
                 for line in f:
                     if line.strip() and "," in line:
                         user_str, tier, expiry_str = line.strip().split(',')
-                        if int(user_str) == uid and float(expiry_str) > time.time(): return tier.lower()
+                        if int(user_str) == uid and float(expiry_str) > time.time():
+                            t = tier.lower()
+                            # Fallbacks for legacy codes
+                            if t == 'tier1': t = 'a'
+                            elif t == 'tier2': t = 'b+'
+                            elif t == 'club': t = 'c+'
+                            return t if t in TIER_CONFIG else 'b'
     except: pass
     return 'b'
 
@@ -425,12 +431,12 @@ def get_main_menu(user_id: int):
             [InlineKeyboardButton("📊 Stats", callback_data='menu_stats'), InlineKeyboardButton("📈 Insights", callback_data='menu_insights')],
             [InlineKeyboardButton("⏰ Active Time", callback_data='menu_active_time'), InlineKeyboardButton("🤖 Auto-Reply", callback_data='menu_autoreply')],
             [InlineKeyboardButton("📜 T&C Stats", callback_data='menu_tnc_stats'), InlineKeyboardButton("🤬 Banned Words", callback_data='menu_manage_words')],
-            [InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods'), InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans')],
-            [InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts'), InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links')],
-            [InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos'), InlineKeyboardButton("🎁 Gift Sub", callback_data='trig_gift')],
-            [InlineKeyboardButton("❌ Revoke Sub", callback_data='trig_revoke'), InlineKeyboardButton("🚀 Force Post", callback_data='trig_forcepost')],
-            [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
-            [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status')],
+            [InlineKeyboardButton("🛡️ Manage Admins", callback_data='menu_manage_admins'), InlineKeyboardButton("👮‍♂️ Manage Mods", callback_data='menu_manage_mods')],
+            [InlineKeyboardButton("🚫 Manage Bans", callback_data='menu_manage_bans'), InlineKeyboardButton("⏳ Manage Timeouts", callback_data='menu_manage_timeouts')],
+            [InlineKeyboardButton("🔗 Toggle Links", callback_data='menu_toggle_links'), InlineKeyboardButton("📸 Toggle Photos", callback_data='menu_toggle_photos')],
+            [InlineKeyboardButton("🎁 Gift Sub", callback_data='trig_gift'), InlineKeyboardButton("❌ Revoke Sub", callback_data='trig_revoke')],
+            [InlineKeyboardButton("🚀 Force Post", callback_data='trig_forcepost'), InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL)],
+            [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
             [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("🗑️ Clear All Queues", callback_data='menu_clear_global')],
             [InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
@@ -963,6 +969,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(TNC_TEXT, reply_markup=get_tnc_keyboard())
         return ConversationHandler.END
     if await is_user_restricted(user_id, update): return ConversationHandler.END
+    
+    if is_owner_or_mod(user_id):
+        admin_help = (
+            "🛡️ <b>Admin/Moderator Commands:</b>\n\n"
+            "<code>/ban &lt;user_id&gt; &lt;reason&gt;</code> - Ban user\n"
+            "<code>/unban &lt;user_id&gt;</code> - Unban user\n"
+            "<code>/timeout &lt;user_id&gt; &lt;mins&gt; &lt;rsn&gt;</code> - Timeout\n"
+            "<code>/untimeout &lt;user_id&gt;</code> - Lift timeout\n"
+            "<code>/clearqueue</code> - Clear own queue\n"
+        )
+        if is_owner_or_admin(user_id):
+            admin_help += (
+                "<code>/addword &lt;word&gt;</code> - Ban a word\n"
+                "<code>/removeword &lt;word&gt;</code> - Unban a word\n"
+                "<code>/addmod &lt;user_id&gt;</code> - Add Moderator\n"
+                "<code>/removemod &lt;user_id&gt;</code> - Remove Moderator\n"
+                "<code>/clearallqueue</code> - Clear master queue\n"
+            )
+        if is_owner(user_id):
+            admin_help += (
+                "<code>/addadmin &lt;user_id&gt;</code> - Add Admin\n"
+                "<code>/removeadmin &lt;user_id&gt;</code> - Remove Admin\n"
+                "<code>/settime &lt;start&gt; &lt;end&gt;</code> - Set active hours\n"
+                "<code>/gift &lt;user_id&gt; &lt;tier&gt; &lt;days&gt;</code> - Gift Sub\n"
+                "<code>/revoke &lt;user_id&gt; &lt;rsn&gt;</code> - Revoke Sub\n"
+                "<code>/forcepost &lt;count&gt;</code> - Bypass queue\n"
+                "<code>/msg &lt;user_id&gt; &lt;text&gt;</code> - DM a user\n"
+                "<code>/broadcast &lt;text&gt;</code> - Broadcast\n"
+            )
+        await update.message.reply_text(admin_help, parse_mode='HTML')
+        return ConversationHandler.END
+
     await update.message.reply_text("Send your query. It will be forwarded to the owner.")
     return AWAITING_HELP_MESSAGE
 
@@ -1008,11 +1046,12 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         safe_uid = query.from_user.id
         safe_user = html.escape(query.from_user.first_name)
         safe_username = f"@{html.escape(query.from_user.username)}" if query.from_user.username else "N/A"
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Approve Mod", callback_data=f"app_mod_{safe_uid}"), InlineKeyboardButton("❌ Reject", callback_data=f"rej_mod_{safe_uid}")]
-        ])
-        await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=f"🛡️ <b>New Moderator Request</b>\n\n<b>User:</b> {safe_user}\n<b>Username:</b> {safe_username}\n<b>ID:</b> <code>{safe_uid}</code>", parse_mode='HTML', reply_markup=markup)
-        await query.edit_message_text("✅ Your request to become a Moderator has been sent to the Admins. You will be notified if approved.")
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Approve Mod", callback_data=f"app_mod_{safe_uid}"), InlineKeyboardButton("❌ Reject", callback_data=f"rej_mod_{safe_uid}")]])
+        try:
+            await context.bot.send_message(chat_id=OWNER_ID, text=f"🛡️ <b>New Moderator Request</b>\n\n<b>User:</b> {safe_user}\n<b>Username:</b> {safe_username}\n<b>ID:</b> <code>{safe_uid}</code>", parse_mode='HTML', reply_markup=markup)
+            await query.edit_message_text("✅ Your request to become a Moderator has been sent to the Developer. You will be notified if approved.")
+        except Exception:
+            await query.edit_message_text("❌ Failed to send request. The Developer might not have started a chat with the bot.")
         return
 
     elif query.data.startswith('app_mod_'):
@@ -1258,8 +1297,17 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_back')]])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
-    elif query.data == 'menu_manage_mods':
+    elif query.data == 'menu_manage_admins':
         if not is_owner(user_id): return
+        txt = "🛡️ <b>Admin Management (Owner Only)</b>\nChoose an action below:"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Add Admin", callback_data='trig_addadmin'), InlineKeyboardButton("➖ Remove Admin", callback_data='trig_rmadmin')],
+            [InlineKeyboardButton("◀️ Back", callback_data='menu_back')]
+        ])
+        await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
+
+    elif query.data == 'menu_manage_mods':
+        if not is_owner_or_admin(user_id): return
         txt = "👮‍♂️ <b>Moderator Management</b>\nChoose an action below:"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ Add Mod", callback_data='trig_addmod'), InlineKeyboardButton("➖ Remove Mod", callback_data='trig_rmmod')],
@@ -1302,8 +1350,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
-        owner_only_actions = ['trig_addmod', 'trig_rmmod', 'trig_settime', 'trig_setautoreply', 'trig_gift', 'trig_revoke', 'trig_forcepost', 'trig_addadmin', 'trig_rmadmin']
-        admin_only_actions = ['trig_ban', 'trig_unban', 'trig_addword', 'trig_rmword']
+        owner_only_actions = ['trig_addadmin', 'trig_rmadmin', 'trig_settime', 'trig_setautoreply', 'trig_gift', 'trig_revoke', 'trig_forcepost']
+        admin_only_actions = ['trig_ban', 'trig_unban', 'trig_addword', 'trig_rmword', 'trig_addmod', 'trig_rmmod']
         
         if query.data in owner_only_actions and not is_owner(user_id):
             await query.edit_message_text("❌ Only the Owner/Developer can perform this action.")
@@ -1318,6 +1366,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_unban': "✅ <b>Unban User</b>\nPlease send the target User ID to unban.\n<i>Example:</i> <code>123456789</code>",
             'trig_timeout': "⏱️ <b>Timeout User</b>\nPlease send the User ID, Minutes, and Reason.\n<i>Example:</i> <code>123456789 60 Flooding chat</code>",
             'trig_rmtimeout': "✅ <b>Remove Timeout</b>\nPlease send the target User ID to remove timeout.\n<i>Example:</i> <code>123456789</code>",
+            'trig_addadmin': "➕ <b>Add Admin</b>\nPlease send the User ID to promote.\n<i>Example:</i> <code>123456789</code>",
+            'trig_rmadmin': "➖ <b>Remove Admin</b>\nPlease send the User ID to demote.\n<i>Example:</i> <code>123456789</code>",
             'trig_addmod': "➕ <b>Add Moderator</b>\nPlease send the User ID to promote.\n<i>Example:</i> <code>123456789</code>",
             'trig_rmmod': "➖ <b>Remove Moderator</b>\nPlease send the User ID to demote.\n<i>Example:</i> <code>123456789</code>",
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>",
@@ -1350,8 +1400,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'timeout': timeout_user, 'untimeout': remove_timeout, 'ban': ban_user, 'unban': unban_user,
             'addmod': add_mod, 'removemod': remove_mod, 'addban': add_banned_word, 'removeban': remove_banned_word,
             'settime': set_time, 'gift': gift_subscription, 'revoke': revoke_subscription,
-            'clearqueue': clear_queue, 'clearallqueue': clear_all_queue, 'broadcast': broadcast,
-            'forcepost': force_post, 'msg': msg_user
+            'clearqueue': clear_queue, 'clearallqueue': clear_all_queue, 'broadcast': broadcast, 'msg': msg_user,
+            'addadmin': add_admin, 'removeadmin': remove_admin, 'forcepost': force_post
         }
         if first_word in admin_commands:
             context.args = parts[1:]
@@ -1369,6 +1419,8 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == 'trig_rmtimeout': success = await remove_timeout(update, context)
         elif state == 'trig_addmod': success = await add_mod(update, context)
         elif state == 'trig_rmmod': success = await remove_mod(update, context)
+        elif state == 'trig_addadmin': success = await add_admin(update, context)
+        elif state == 'trig_rmadmin': success = await remove_admin(update, context)
         elif state == 'trig_addword': success = await add_banned_word(update, context)
         elif state == 'trig_rmword': success = await remove_banned_word(update, context)
         elif state == 'trig_settime': success = await set_time(update, context)
@@ -1462,7 +1514,7 @@ def main():
     application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
     application.add_error_handler(error_handler)
     
-    for cmd, func in [("start", start), ("cancel", cancel), ("settime", set_time), ("broadcast", broadcast), ("ban", ban_user), ("unban", unban_user), ("addmod", add_mod), ("removemod", remove_mod), ("timeout", timeout_user), ("untimeout", remove_timeout), ("addban", add_banned_word), ("removeban", remove_banned_word), ("revoke", revoke_subscription), ("gift", gift_subscription), ("clearqueue", clear_queue), ("clearallqueue", clear_all_queue), ("forcepost", force_post), ("msg", msg_user)]:
+    for cmd, func in [("start", start), ("cancel", cancel), ("settime", set_time), ("broadcast", broadcast), ("ban", ban_user), ("unban", unban_user), ("addmod", add_mod), ("removemod", remove_mod), ("timeout", timeout_user), ("untimeout", remove_timeout), ("addban", add_banned_word), ("removeban", remove_banned_word), ("revoke", revoke_subscription), ("gift", gift_subscription), ("clearqueue", clear_queue), ("clearallqueue", clear_all_queue), ("forcepost", force_post), ("msg", msg_user), ("addadmin", add_admin), ("removeadmin", remove_admin)]:
         application.add_handler(CommandHandler(cmd, func))
 
     application.add_handler(ConversationHandler(
