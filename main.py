@@ -8,6 +8,7 @@ import logging
 import html
 import json
 
+# Force the bot to use its own directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(SCRIPT_DIR)
 
@@ -96,6 +97,10 @@ GUIDE_TEXT = (
     "- To delete a LIVE post, forward the message to the bot from the channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
     "- To cancel your PENDING posts that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
+    "<u>Subscriptions & Timeouts</u>\n"
+    "- Optional Subscriptions improve bot interaction and queue times. Non-refundable.\n"
+    "- Clubs/Associations must apply for approval via the Store bot.\n"
+    "- Timed punishments are imposed for rule-breaking. Users can instantly lift their own timeout by purchasing a 'Clear Timeout' pass for 200 Stars in the Subscription Store.\n\n"
     "<u>Developer/Admin/Moderator (Dev/Mod)</u>\n"
     "- Any decision made by the Dev, Admins, and Mods is with their own level of judgement and should not be questioned."
 )
@@ -283,7 +288,7 @@ def recalculate_queues(pq_list: list) -> list:
     new_tier_times = {}
     for job in pq_list:
         t = job.get('tier', 'b')
-        q_dur = TIER_CONFIG.get(t, TIER_CONFIG['b'])['queue'] if t != 'c+' else 0
+        q_dur = TIER_CONFIG.get(t, TIER_CONFIG['b'])['queue'] if t != 'club' else 0
         queue_start = max(start_ts, new_tier_times.get(t, start_ts))
         new_sched = queue_start + q_dur
         job['scheduled_time'] = new_sched
@@ -420,7 +425,10 @@ def create_mod_log_message(job_info: Dict[str, Any], content_type: str, text_con
     return log_message
 
 def get_tnc_keyboard():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("📖 Read Guide", callback_data='tc_guide')], [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Read Guide", callback_data='tc_guide')],
+        [InlineKeyboardButton("✅ I Agree", callback_data='tc_agree')]
+    ])
 
 def get_main_menu(user_id: int):
     keyboard = []
@@ -463,6 +471,7 @@ def get_main_menu(user_id: int):
         keyboard = [
             [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL), InlineKeyboardButton("📈 View Queue", callback_data='menu_insights')],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
+            [InlineKeyboardButton("🤬 View Banned Words", callback_data='menu_view_words')],
             [InlineKeyboardButton("🛡️ Become Moderator", callback_data='req_mod')],
             [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
@@ -979,7 +988,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/settime &lt;start&gt; &lt;end&gt; - Set active hours (24h)\n"
             "/gift &lt;id&gt; &lt;tier&gt; &lt;days&gt; - Gift sub (Dev only)\n"
             "/revoke &lt;id&gt; &lt;reason&gt; - Revoke sub (Dev only)\n"
-            "/forcepost &lt;count&gt; - Force post queue\n"
             "/clearqueue - Clear your pending items\n"
             "/clearallqueue - Clear ENTIRE queue\n"
             "/broadcast &lt;msg&gt; - Send to all users (Dev only)\n"
@@ -1346,7 +1354,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         current_words = load_banned_words()
         msg = ", ".join(sorted(current_words)) if current_words else "None."
         txt = f"🤬 <b>Current Banned Words:</b>\n<code>{html.escape(msg)}</code>"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_manage_words' if is_owner_or_mod(user_id) else 'menu_back')]])
+        back_btn = 'menu_manage_words' if is_owner_or_admin(user_id) else 'menu_back'
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data=back_btn)]])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
