@@ -124,7 +124,9 @@ GUIDE_TEXT = (
     "<u>Deletion & Queue Management</u>\n"
     "- To delete a LIVE ad, forward the message to the bot from the Marketplace channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
-    "- To cancel your PENDING ads that are still in the queue, click 'Clear My Queue' in the menu."
+    "- To cancel your PENDING ads that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
+    "<u>Developer/Admin/Moderator (Dev/Mod)</u>\n"
+    "- Any decision made by the Dev, Admins, and Mods is with their own level of judgement and should not be questioned."
 )
 
 TNC_TEXT = (
@@ -493,6 +495,7 @@ def get_main_menu(user_id: int):
         keyboard = [
             [InlineKeyboardButton("🛒 Subscriptions", url=SUB_BOT_URL), InlineKeyboardButton("📈 View Queue", callback_data='menu_insights')],
             [InlineKeyboardButton("👤 My Status", callback_data='menu_my_status'), InlineKeyboardButton("📖 Read Guide", callback_data='menu_guide')],
+            [InlineKeyboardButton("🤬 View Banned Words", callback_data='menu_view_words')],
             [InlineKeyboardButton("🛡️ Become Moderator", callback_data='req_mod')],
             [InlineKeyboardButton("🗑️ Clear My Queue", callback_data='menu_clear'), InlineKeyboardButton("❌ Close Menu", callback_data='menu_close')]
         ]
@@ -908,48 +911,6 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_tier_times({})
     await update.message.reply_text("✅ Master Ad Queue has been cleared.")
 
-async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if not is_owner(update.message.from_user.id): return False
-    try:
-        target_uid = int(context.args[0])
-        tier_code = context.args[1].lower()
-        days = int(context.args[2])
-        if tier_code not in TIER_CONFIG or tier_code == 'b': return False
-        now = time.time()
-        expiry = now + (days * 86400)
-        with open("active_subscriptions.txt", "a", encoding="utf-8") as f: f.write(f"{target_uid},{tier_code},{expiry}\n")
-        tier_name = TIER_CONFIG[tier_code]['name']
-        await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
-        await log_admin_action(context, "Gift Subscription", update.message.from_user, target_uid, f"Gifted {tier_name}", f"{days} days")
-        try: await context.bot.send_message(chat_id=target_uid, text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days.", parse_mode='HTML')
-        except: pass
-        return True
-    except: return False
-
-async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if not is_owner(update.message.from_user.id): return False
-    try:
-        target_uid = int(context.args[0])
-        reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided"
-        revoked = False
-        remaining_lines = []
-        if os.path.exists("active_subscriptions.txt"):
-            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.strip() and "," in line:
-                        u_id, tier, expiry = line.strip().split(',')
-                        if int(u_id) == target_uid: revoked = True
-                        else: remaining_lines.append(line)
-        if revoked:
-            with open("active_subscriptions.txt", "w", encoding="utf-8") as f: f.writelines(remaining_lines)
-            await update.message.reply_text(f"✅ Subscription for user <code>{target_uid}</code> has been REVOKED.", parse_mode='HTML')
-            await log_admin_action(context, "Revoke Subscription", update.message.from_user, target_uid, reason)
-            try: await context.bot.send_message(chat_id=target_uid, text=f"⚠️ <b>Subscription Revoked</b>\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
-            except: pass
-            return True
-        else: return False
-    except: return False
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if is_owner_or_admin(user_id):
@@ -966,11 +927,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/addban &lt;word&gt; - Add banned word\n"
             "/removeban &lt;word&gt; - Remove banned word\n"
             "/settime &lt;start&gt; &lt;end&gt; - Set active hours (24h)\n"
-            "/gift &lt;id&gt; &lt;tier&gt; &lt;days&gt; - Gift sub (Dev only)\n"
-            "/revoke &lt;id&gt; &lt;reason&gt; - Revoke sub (Dev only)\n"
             "/clearqueue - Clear your pending items\n"
             "/clearallqueue - Clear ENTIRE queue\n"
-            "/broadcast &lt;msg&gt; - Send to all users (Dev only)\n"
             "/msg &lt;id&gt; &lt;msg&gt; - Message specific user (Dev only)\n"
         )
         await update.message.reply_text(help_text, parse_mode='HTML')
@@ -1330,7 +1288,8 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         current_words = load_banned_words()
         msg = ", ".join(sorted(current_words)) if current_words else "None."
         txt = f"🤬 <b>Current Banned Words:</b>\n<code>{html.escape(msg)}</code>"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data='menu_manage_words' if is_owner_or_mod(user_id) else 'menu_back')]])
+        back_btn = 'menu_manage_words' if is_owner_or_admin(user_id) else 'menu_back'
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Back", callback_data=back_btn)]])
         await query.edit_message_text(text=txt, parse_mode='HTML', reply_markup=markup)
 
     elif query.data.startswith('trig_'):
@@ -1357,7 +1316,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>",
             'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>",
-            'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 b+ 14</code>",
+            'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 c 14</code>",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>"
         }
         cancel_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='menu_back')]])
@@ -1383,7 +1342,7 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'addmod': add_mod, 'removemod': remove_mod, 'addadmin': add_admin, 'removeadmin': remove_admin,
             'addban': add_banned_word, 'removeban': remove_banned_word,
             'settime': set_time, 'gift': gift_subscription, 'revoke': revoke_subscription,
-            'clearqueue': clear_queue, 'clearallqueue': clear_all_queue, 'broadcast': broadcast, 'msg': msg_user
+            'clearqueue': clear_queue, 'clearallqueue': clear_all_queue, 'msg': msg_user
         }
         if first_word in admin_commands:
             context.args = parts[1:]
@@ -1459,7 +1418,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
-    try: await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Market Bot is up! Started at {now_str}")
+    try: await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Market Bot is up! Dedicated Market Mode Active. Started at {now_str}")
     except: pass
 
 def main():
@@ -1468,7 +1427,17 @@ def main():
     application = ApplicationBuilder().token(TOKEN).post_init(post_init).read_timeout(30).connect_timeout(30).build()
     
     application.job_queue.run_repeating(persistent_queue_worker, interval=5, first=5)
-    application.job_queue.run_repeating(send_periodic_promo, interval=1800, first=10)
+    
+    # CALCULATE EXACT TIME TO NEXT EVEN HOUR FOR 2-HOUR PROMO TICK
+    now = datetime.datetime.now(TIMEZONE)
+    hours_to_add = 2 - (now.hour % 2)
+    next_hour = now.hour + hours_to_add
+    if next_hour >= 24:
+        next_promo_time = now.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+    else:
+        next_promo_time = now.replace(hour=next_hour, minute=0, second=0, microsecond=0)
+        
+    application.job_queue.run_repeating(send_periodic_promo, interval=7200, first=next_promo_time)
     
     application.add_error_handler(error_handler)
     
