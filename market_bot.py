@@ -124,9 +124,7 @@ GUIDE_TEXT = (
     "<u>Deletion & Queue Management</u>\n"
     "- To delete a LIVE ad, forward the message to the bot from the Marketplace channel.\n"
     "- Sending the word \"delete\" directly to the bot will result in a timeout.\n"
-    "- To cancel your PENDING ads that are still in the queue, click 'Clear My Queue' in the menu.\n\n"
-    "<u>Developer/Admin/Moderator (Dev/Mod)</u>\n"
-    "- Any decision made by the Dev, Admins, and Mods is with their own level of judgement and should not be questioned."
+    "- To cancel your PENDING ads that are still in the queue, click 'Clear My Queue' in the menu."
 )
 
 TNC_TEXT = (
@@ -911,35 +909,82 @@ async def clear_all_queue(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_tier_times({})
     await update.message.reply_text("✅ Master Ad Queue has been cleared.")
 
+async def gift_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not is_owner(update.message.from_user.id): return False
+    try:
+        target_uid = int(context.args[0])
+        tier_code = context.args[1].lower()
+        days = int(context.args[2])
+        if tier_code not in TIER_CONFIG or tier_code == 'b': return False
+        now = time.time()
+        expiry = now + (days * 86400)
+        with open("active_subscriptions.txt", "a", encoding="utf-8") as f: f.write(f"{target_uid},{tier_code},{expiry}\n")
+        tier_name = TIER_CONFIG[tier_code]['name']
+        await update.message.reply_text(f"🎁 Successfully gifted <b>{tier_name}</b> ({days} days) to user <code>{target_uid}</code>!", parse_mode='HTML')
+        await log_admin_action(context, "Gift Subscription", update.message.from_user, target_uid, f"Gifted {tier_name}", f"{days} days")
+        try: await context.bot.send_message(chat_id=target_uid, text=f"🎁 <b>You've received a gift!</b>\nThe Developer has granted you <b>{tier_name}</b> access for {days} days.", parse_mode='HTML')
+        except: pass
+        return True
+    except: return False
+
+async def revoke_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if not is_owner(update.message.from_user.id): return False
+    try:
+        target_uid = int(context.args[0])
+        reason = " ".join(context.args[1:]) if len(context.args) > 1 else "No reason provided"
+        revoked = False
+        remaining_lines = []
+        if os.path.exists("active_subscriptions.txt"):
+            with open("active_subscriptions.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip() and "," in line:
+                        u_id, tier, expiry = line.strip().split(',')
+                        if int(u_id) == target_uid: revoked = True
+                        else: remaining_lines.append(line)
+        if revoked:
+            with open("active_subscriptions.txt", "w", encoding="utf-8") as f: f.writelines(remaining_lines)
+            await update.message.reply_text(f"✅ Subscription for user <code>{target_uid}</code> has been REVOKED.", parse_mode='HTML')
+            await log_admin_action(context, "Revoke Subscription", update.message.from_user, target_uid, reason)
+            try: await context.bot.send_message(chat_id=target_uid, text=f"⚠️ <b>Subscription Revoked</b>\nYour subscription has been revoked by the Developer.\n<b>Reason:</b> {html.escape(reason)}", parse_mode='HTML')
+            except: pass
+            return True
+        else: return False
+    except: return False
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    if is_owner_or_admin(user_id):
+    if is_owner(user_id):
         help_text = (
-            "🛠️ <b>Admin & Dev Commands:</b>\n"
-            "/ban &lt;id&gt; [reason] - Ban user\n"
-            "/unban &lt;id&gt; - Unban user\n"
-            "/timeout &lt;id&gt; &lt;mins&gt; [reason] - Timeout user\n"
-            "/untimeout &lt;id&gt; - Remove timeout\n"
-            "/addmod &lt;id&gt; - Add moderator\n"
-            "/removemod &lt;id&gt; - Remove moderator\n"
-            "/addadmin &lt;id&gt; - Add admin (Dev only)\n"
-            "/removeadmin &lt;id&gt; - Remove admin (Dev only)\n"
-            "/addban &lt;word&gt; - Add banned word\n"
-            "/removeban &lt;word&gt; - Remove banned word\n"
-            "/settime &lt;start&gt; &lt;end&gt; - Set active hours (24h)\n"
-            "/clearqueue - Clear your pending items\n"
-            "/clearallqueue - Clear ENTIRE queue\n"
-            "/msg &lt;id&gt; &lt;msg&gt; - Message specific user (Dev only)\n"
+            "🛠️ <b>Dev Commands:</b>\n"
+            "/addadmin &lt;id&gt;\n/removeadmin &lt;id&gt;\n"
+            "/addmod &lt;id&gt;\n/removemod &lt;id&gt;\n"
+            "/ban &lt;id&gt; [reason]\n/unban &lt;id&gt;\n"
+            "/timeout &lt;id&gt; &lt;mins&gt; [reason]\n/untimeout &lt;id&gt;\n"
+            "/addban &lt;word&gt;\n/removeban &lt;word&gt;\n"
+            "/settime &lt;start&gt; &lt;end&gt;\n"
+            "/gift &lt;id&gt; &lt;tier&gt; &lt;days&gt;\n/revoke &lt;id&gt; &lt;reason&gt;\n"
+            "/clearqueue\n/clearallqueue\n"
+            "/broadcast &lt;msg&gt;\n/msg &lt;id&gt; &lt;msg&gt;"
+        )
+        await update.message.reply_text(help_text, parse_mode='HTML')
+        return ConversationHandler.END
+    elif is_owner_or_admin(user_id):
+        help_text = (
+            "🛠️ <b>Admin Commands:</b>\n"
+            "/addmod &lt;id&gt;\n/removemod &lt;id&gt;\n"
+            "/ban &lt;id&gt; [reason]\n/unban &lt;id&gt;\n"
+            "/timeout &lt;id&gt; &lt;mins&gt; [reason]\n/untimeout &lt;id&gt;\n"
+            "/addban &lt;word&gt;\n/removeban &lt;word&gt;\n"
+            "/clearqueue\n/clearallqueue"
         )
         await update.message.reply_text(help_text, parse_mode='HTML')
         return ConversationHandler.END
     elif is_owner_or_mod(user_id):
         help_text = (
             "🛠️ <b>Moderator Commands:</b>\n"
-            "/timeout &lt;id&gt; &lt;mins&gt; [reason] - Timeout user\n"
-            "/untimeout &lt;id&gt; - Remove timeout\n"
-            "/clearqueue - Clear your pending items\n"
-            "/clearallqueue - Clear ENTIRE queue\n"
+            "/timeout &lt;id&gt; &lt;mins&gt; [reason]\n"
+            "/untimeout &lt;id&gt;\n"
+            "/clearqueue\n/clearallqueue"
         )
         await update.message.reply_text(help_text, parse_mode='HTML')
         return ConversationHandler.END
@@ -1316,7 +1361,7 @@ async def menu_button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             'trig_addword': "➕ <b>Add Banned Word</b>\nPlease send the word you want to ban.\n<i>Example:</i> <code>badword</code>",
             'trig_rmword': "➖ <b>Remove Banned Word</b>\nPlease send the word you want to unban.\n<i>Example:</i> <code>badword</code>",
             'trig_settime': "✏️ <b>Set Active Time</b>\nPlease send the Start and End hours (24h format).\n<i>Example for 9PM to 6PM:</i> <code>21 18</code>",
-            'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 c 14</code>",
+            'trig_gift': "🎁 <b>Gift Subscription</b>\nPlease send the target User ID, Tier Code, and Days.\n<i>Example:</i> <code>123456789 b+ 14</code>",
             'trig_revoke': "❌ <b>Revoke Subscription</b>\nPlease send the User ID and Reason.\n<i>Example:</i> <code>123456789 Rule violation</code>"
         }
         cancel_markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data='menu_back')]])
@@ -1418,7 +1463,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application):
     now_str = datetime.datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')
-    try: await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Market Bot is up! Dedicated Market Mode Active. Started at {now_str}")
+    try: await application.bot.send_message(chat_id=OWNER_ID, text=f"✅ Market Bot is up! Started at {now_str}")
     except: pass
 
 def main():
